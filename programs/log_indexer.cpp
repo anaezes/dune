@@ -31,6 +31,7 @@
 #include <iostream>
 #include <sstream>
 #include <cstdio>
+#include <vector>
 
 // DUNE headers.
 #include <DUNE/DUNE.hpp>
@@ -226,15 +227,69 @@ getLog(char* file) {
     return Log(log_name, vehicle_name, distance, latStart, lonStart, date, duration);
 }
 
+void
+getDataFiles(const char* directory, std::vector<std::string> &result) {
+
+    try
+    {
+        Directory dir(directory);
+        const char* fname = 0;
+
+        std::string str = directory;
+        str += "/Data.lsf.gz";
+        const char* fileName =  str.c_str();
+
+       while ((fname = dir.readEntry(Directory::RD_FULL_NAME)))
+        {
+            struct stat s;
+            if(stat(fname,&s) == 0)
+            {
+                if( s.st_mode & S_IFDIR )
+                {
+                    //it's a directory
+                    getDataFiles(fname, result);
+                }
+                else if( s.st_mode & S_IFREG )
+                {
+                    //it's a file
+                    if (std::strcmp(fname, fileName) == 0) {
+                        //append to result
+                        result.push_back(fname);
+                        continue;
+                    }
+                }
+            }
+            else
+            {
+                //error
+            }
+        }
+    }
+    catch (...)
+    { }
+}
+
 
 int
 main(int32_t argc, char** argv) {
+
+    std::vector<std::string> result;
+    getDataFiles(argv[1], result);
+
+    for(size_t i = 0 ; i < result.size(); i++){
+        std::cout << std::endl << result[i] << std::endl;
+    }
+
+
+
+    /*
+
+     //   ags::   /home/ana/workspace/lsts/build/log/lauv-noptilus-2/20180709/142145_cmd-lauv-noptilus-2/Data.lsf.gz /home/ana/workspace/lsts/database.db
     if (argc <= 2) {
         std::cerr << "Usage: " << argv[0] << " <path_to_log_1/Data.lsf[.gz]> ... <path_database/database.db>"
                   << std::endl;
         return 1;
     }
-
 
     // get log information
     Log log = getLog(argv[1]);
@@ -260,7 +315,7 @@ main(int32_t argc, char** argv) {
 
     //db.commit();
 
-    testDB(db);
+    testDB(db);*/
 
 }
 
