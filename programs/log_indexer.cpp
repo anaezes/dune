@@ -43,7 +43,7 @@ struct Log
 {
     std::string name;
     std::string vehicle;
-    //std::vector<std::string> sensors;
+    std::vector<std::string> sensors;
     double distance;
     double latStart;
     double lonStart;
@@ -52,21 +52,19 @@ struct Log
     //std::vector<std::string> warnings;
     double duration;
 
-    Log(const std::string& a_name, const std::string& a_vehicle, double a_distance, double a_latStart, double a_lonStart, std::time_t a_date, double a_duration):
+    Log(const std::string& a_name, const std::string& a_vehicle, std::vector<std::string> sensors, double a_distance, double a_latStart, double a_lonStart, std::time_t a_date, double a_duration):
             name(a_name),
             vehicle(a_vehicle),
             distance(a_distance),
             latStart(a_latStart),
             lonStart(a_lonStart),
             date(a_date),
-            duration(a_duration)
-           /* sensors(0),
-            errors(0),
-            warnings(0) */
+            duration(a_duration),
+            sensors(sensors)
+     /*errors(0),
+     warnings(0) */
     { }
 };
-
-void testDB(Database::Connection connection);
 
 // Minimum rpm before starting to assume that the vehicle is moving
 const float c_min_rpm = 400.0;
@@ -75,14 +73,47 @@ const float c_max_speed = 6.0;
 // Timestep
 const float c_timestep = 0.5;
 
+static const char* c_log_table_stmt =
+        "CREATE TABLE IF NOT EXISTS log ( "
+        "name text PRIMARY KEY,"
+        "vehicle text NOT NULL,"
+        "distTravelled REAL NOT NULL,"
+        "startLat REAL NOT NULL,"
+        "startLon REAL NOT NULL,"
+        "\"date\" INTEGER NOT NULL,"
+        "errors text,"
+        "warnings text,"
+        "duration REAL NOT NULL"
+        ");";
+
+static const char* c_sensor_table_stmt =
+        "CREATE TABLE IF NOT EXISTS sensor ( "
+        "sensorName text NOT NULL"
+        ");";
+
+static const char* c_log_sensor_table_stmt =
+        "CREATE TABLE IF NOT EXISTS log_sensor ( "
+        "logName text NOT NULL REFERENCES log ON DELETE CASCADE,"
+        "sensorName text NOT NULL REFERENCES sensor ON DELETE CASCADE"
+        ");";
+
+static const char* c_insert_sensor_stmt = "INSERT OR IGNORE INTO SENSOR VALUES(?)";
+static const char* c_insert_log_sensor_stmt = "INSERT OR IGNORE INTO LOG_SENSOR VALUES(?,?)";
+static const char* c_insert_log_stmt = "INSERT OR IGNORE INTO LOG VALUES(?,?,?,?,?,?,?,?,?)";
+
+const char * const sensorsList[] = {"Ctd", "Sidescan", "Imu", "Multibeam", "Camara", "Ranger"};
+
+const int NSENSORS = 6;
+
+
 Log
-getLog(char* file) {
+getLog(std::string file) {
     std::istream* is = 0;
-    Compression::Methods method = Compression::Factory::detect(file);
+    Compression::Methods method = Compression::Factory::detect(file.c_str());
     if (method == METHOD_UNKNOWN)
-        is = new std::ifstream(file, std::ios::binary);
+        is = new std::ifstream(file.c_str(), std::ios::binary);
     else
-        is = new Compression::FileInput(file, method);
+        is = new Compression::FileInput(file.c_str(), method);
 
     IMC::Message* msg = NULL;
 
@@ -93,7 +124,7 @@ getLog(char* file) {
     double last_lat, last_lon;
     double latStart = 0.0;
     double lonStart = 0.0;
-    std::time_t date;
+    std::time_t date = 0;
 
     // Accumulated travelled distance
     double distance = 0.0;
@@ -108,6 +139,8 @@ getLog(char* file) {
 
     bool got_name_veh = false;
     std::string vehicle_name = "unknown";
+
+    std::set<std::string> sensors_tmp;
 
     try
     {
@@ -185,6 +218,31 @@ getLog(char* file) {
                 IMC::Rpm* ptr = static_cast<IMC::Rpm*>(msg);
                 curr_rpm = ptr->value;
             }
+            else if(msg->getId() == DUNE_IMC_PLANSPECIFICATION)
+            {
+               IMC::PlanSpecification* pspec = static_cast<IMC::PlanSpecification*>(msg);
+                const IMC::SetEntityParameters* t_sep;
+
+                IMC::MessageList<IMC::PlanManeuver>::const_iterator it = pspec->maneuvers.begin();
+                for (; it != pspec->maneuvers.end(); it++ )
+                {
+                    IMC::MessageList<IMC::Message>::const_iterator it1 = (*it)->start_actions.begin();
+                    for (; it1 != (*it)->start_actions.end(); it1++ )
+                    {
+                        if((*it1)->getId() == DUNE_IMC_SETENTITYPARAMETERS)
+                        {
+                            t_sep = static_cast<const IMC::SetEntityParameters *>(*it1);
+                            sensors_tmp.insert(t_sep->name);
+                        }
+                    }
+                }
+
+            }
+            else if(msg->getId() == DUNE_IMC_SETENTITYPARAMETERS)
+            {
+                IMC::SetEntityParameters* etparam = static_cast<IMC::SetEntityParameters*>(msg);
+                sensors_tmp.insert(etparam->name);
+            }
 /*            else if (msg->getId() == DUNE_IMC_SIMULATEDSTATE)
             {
                 // since it has simulated state let us ignore this log
@@ -198,13 +256,13 @@ getLog(char* file) {
 
             // ignore idles
             // either has the string _idle or has only the time.
- /*           if (log_name.find("_idle") != std::string::npos ||
-                log_name.size() == 15)
-            {
-                ignore = true;
-                std::cerr << "this is an idle log";
-                break;
-            }*/
+            /*           if (log_name.find("_idle") != std::string::npos ||
+                           log_name.size() == 15)
+                       {
+                           ignore = true;
+                           std::cerr << "this is an idle log";
+                           break;
+                       }*/
         }
     }
     catch (std::runtime_error& e)
@@ -214,17 +272,27 @@ getLog(char* file) {
 
     delete is;
 
+    std::vector<std::string> sensors;
+    std::copy(sensors_tmp.begin(), sensors_tmp.end(), std::back_inserter(sensors));
+
+
+    /* TEST LOG */
     std::cout << std::endl;
     std::cout << "::: LOG ::::" << std::endl;
     std::cout << "log_name : " << log_name << std::endl;
     std::cout << "vehicle_name : " << vehicle_name << std::endl;
+    std::cout << "Sensors: " << std::endl;
+
+    for(size_t i = 0; i < sensors.size();i++)
+        std::cout << i << " - " << sensors[i] << std::endl;
+
     std::cout << "distance : " << distance << std::endl;
     std::cout << "last_lat : " << latStart << std::endl;
     std::cout << "last_lon : " << lonStart << std::endl;
     std::cout << "date : " << date << std::endl;
     std::cout << "duration : " << duration << std::endl;
-
-    return Log(log_name, vehicle_name, distance, latStart, lonStart, date, duration);
+    
+    return Log(log_name, vehicle_name, sensors, distance, latStart, lonStart, date, duration);
 }
 
 void
@@ -239,7 +307,7 @@ getDataFiles(const char* directory, std::vector<std::string> &result) {
         str += "/Data.lsf.gz";
         const char* fileName =  str.c_str();
 
-       while ((fname = dir.readEntry(Directory::RD_FULL_NAME)))
+        while ((fname = dir.readEntry(Directory::RD_FULL_NAME)))
         {
             struct stat s;
             if(stat(fname,&s) == 0)
@@ -269,39 +337,12 @@ getDataFiles(const char* directory, std::vector<std::string> &result) {
     { }
 }
 
-
-int
-main(int32_t argc, char** argv) {
-
-    std::vector<std::string> result;
-    getDataFiles(argv[1], result);
-
-    for(size_t i = 0 ; i < result.size(); i++){
-        std::cout << std::endl << result[i] << std::endl;
-    }
-
-
-
-    /*
-
-     //   ags::   /home/ana/workspace/lsts/build/log/lauv-noptilus-2/20180709/142145_cmd-lauv-noptilus-2/Data.lsf.gz /home/ana/workspace/lsts/database.db
-    if (argc <= 2) {
-        std::cerr << "Usage: " << argv[0] << " <path_to_log_1/Data.lsf[.gz]> ... <path_database/database.db>"
-                  << std::endl;
-        return 1;
-    }
-
-    // get log information
-    Log log = getLog(argv[1]);
-
-    // add to database (...)
-    DUNE::Database::Connection db(argv[2], DUNE::Database::Connection::CF_CREATE);
-
-    db.beginTransaction();
-    std::cout << std::endl << "Connection::beginTransaction()" << std::endl;
-
-    DUNE::Database::Statement insertion("INSERT INTO LOG VALUES(?,?,?,?,?,?,?,?,?)", db);
-    insertion << log.name
+void
+addToDataBase(Database::Connection* db, Log log) {
+    //DUNE::Database::Connection db(database, DUNE::Database::Connection::CF_CREATE);
+    //db.beginTransaction();
+    DUNE::Database::Statement insertionLog(c_insert_log_stmt, *db);
+    insertionLog << log.name
               << log.vehicle
               << log.distance
               << log.latStart
@@ -310,17 +351,20 @@ main(int32_t argc, char** argv) {
               << "no"
               << "yes"
               << log.duration;
+    insertionLog.execute();
 
-    insertion.execute();
+    for(size_t i = 0; i < log.sensors.size(); i++) {
+
+        DUNE::Database::Statement insertionLogSensor(c_insert_log_sensor_stmt, *db);
+        insertionLogSensor << log.name
+                           << log.sensors[i];
+        insertionLogSensor.execute();
+    }
 
     //db.commit();
 
-    testDB(db);*/
-
-}
-
-void testDB(Database::Connection db) {
-    DUNE::Database::Statement query("SELECT * FROM LOG", db);
+    //test database
+    DUNE::Database::Statement query("SELECT * FROM LOG", *db);
 
     while (query.execute()) {
         std::string name;
@@ -328,7 +372,7 @@ void testDB(Database::Connection db) {
         double distance;
         double latStart;
         double lonStart;
-        long date;
+        std::time_t date;
         double duration;
         std::string errors;
         std::string warnings;
@@ -344,7 +388,8 @@ void testDB(Database::Connection db) {
               >> warnings
               >> duration;
 
-        std::cout << "::: LOG ::::" << std::endl;
+        std::cout << std::endl;
+        std::cout << "::: LOG DATA BASE ::::" << std::endl;
         std::cout << "log_name : " << name << std::endl;
         std::cout << "vehicle_name : " << vehicle << std::endl;
         std::cout << "distance : " << distance << std::endl;
@@ -355,5 +400,77 @@ void testDB(Database::Connection db) {
         std::cout << "warnings : " << warnings << std::endl;
         std::cout << "duration : " << duration << std::endl << std::endl;
     }
+
+    DUNE::Database::Statement query1("SELECT * FROM SENSOR", *db);
+    while (query1.execute()) {
+        std::string name;
+        query1 >> name;
+        std::cout << "sensor name : " << name << std::endl;
+    }
+
+    DUNE::Database::Statement query2("SELECT * FROM LOG_SENSOR", *db);
+    while (query2.execute()) {
+        std::string log_name, sensor;
+        query2 >> log_name >> sensor;
+        std::cout << "log name : " << log_name << std::endl;
+        std::cout << "sensor name : " << sensor << std::endl;
+    }
+}
+
+int
+prepareDatabase(Database::Connection* db) {
+
+    // Create log table
+    db->execute(c_log_table_stmt);
+
+    // Create sensor table and initialize them
+    db->execute(c_sensor_table_stmt);
+
+    for(size_t i = 0; i < NSENSORS; i++)
+    {
+        Database::Statement sensor_insert(c_insert_sensor_stmt, *db);
+        sensor_insert << sensorsList[i] ;
+        sensor_insert.execute();
+    }
+
+    // Create log_sensor table
+    db->execute(c_log_sensor_table_stmt);
+
+    db->commit();
+}
+
+
+
+int
+main(int32_t argc, char** argv) {
+
+    // home/ana/workspace/lsts/build/log/lauv-noptilus-2/20180709/142145_cmd-lauv-noptilus-2/Data.lsf.gz /home/ana/workspace/lsts/database.db
+    if (argc <= 2) {
+        std::cerr << "Usage: " << argv[0] << " <path_directory> " << "<path_database/database.db>" << std::endl;
+        return 1;
+    }
+
+    //prepare database
+    Database::Connection* db = new Database::Connection(argv[2], Database::Connection::CF_CREATE);
+    db->beginTransaction();
+
+    if (prepareDatabase(db) == 1) {
+        std::cerr << "Error while preparing the database" << std::endl;
+        return -1;
+    }
+    std::vector<std::string> result;
+    getDataFiles(argv[1], result);
+
+    for (size_t i = 0; i < result.size(); i++) {
+        std::cout << std::endl << result[i] << std::endl;
+
+        // get log information
+        Log log = getLog(result[i]);
+
+        // add to database (...)
+        addToDataBase(db, log);
+    }
+
+    return 0;
 }
 
