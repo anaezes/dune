@@ -51,8 +51,10 @@ struct Log
     //std::vector<std::string> errors;
     //std::vector<std::string> warnings;
     double duration;
+    double maxDepth;
 
-    Log(const std::string& a_name, const std::string& a_vehicle, std::vector<std::string> sensors, double a_distance, double a_latStart, double a_lonStart, std::time_t a_date, double a_duration):
+    Log(const std::string& a_name, const std::string& a_vehicle, std::vector<std::string> sensors, double a_distance,
+        double a_latStart, double a_lonStart, std::time_t a_date, double a_duration, double a_depth):
             name(a_name),
             vehicle(a_vehicle),
             distance(a_distance),
@@ -60,6 +62,7 @@ struct Log
             lonStart(a_lonStart),
             date(a_date),
             duration(a_duration),
+            maxDepth(a_depth),
             sensors(sensors)
      /*errors(0),
      warnings(0) */
@@ -83,27 +86,28 @@ static const char* c_log_table_stmt =
         "\"date\" INTEGER NOT NULL,"
         "errors text,"
         "warnings text,"
-        "duration REAL NOT NULL"
+        "duration REAL NOT NULL,"
+        "maxDepth REAL NOT NULL"
         ");";
 
 static const char* c_sensor_table_stmt =
         "CREATE TABLE IF NOT EXISTS sensor ( "
-        "sensorName text NOT NULL"
+        "sensorName text PRIMARY KEY"
         ");";
 
 static const char* c_log_sensor_table_stmt =
         "CREATE TABLE IF NOT EXISTS log_sensor ( "
         "logName text NOT NULL REFERENCES log ON DELETE CASCADE,"
-        "sensorName text NOT NULL REFERENCES sensor ON DELETE CASCADE"
+        "sensorName text NOT NULL REFERENCES sensor ON DELETE CASCADE,"
+        "PRIMARY KEY (logName, sensorName)"
         ");";
 
-static const char* c_insert_sensor_stmt = "INSERT OR IGNORE INTO SENSOR VALUES(?)";
-static const char* c_insert_log_sensor_stmt = "INSERT OR IGNORE INTO LOG_SENSOR VALUES(?,?)";
-static const char* c_insert_log_stmt = "INSERT OR IGNORE INTO LOG VALUES(?,?,?,?,?,?,?,?,?)";
+static const char* c_insert_sensor_stmt = "INSERT OR IGNORE INTO sensor VALUES(?)";
+static const char* c_insert_log_sensor_stmt = "INSERT OR IGNORE INTO log_sensor VALUES(?,?)";
+static const char* c_insert_log_stmt = "INSERT OR IGNORE INTO log VALUES(?,?,?,?,?,?,?,?,?,?)";
 
-const char * const sensorsList[] = {"Ctd", "Sidescan", "Imu", "Multibeam", "Camara", "Ranger"};
-
-const int NSENSORS = 6;
+static const std::string sensorsList[] = {"Ctd", "Sidescan", "Imu", "Multibeam", "Camera"};
+std::set<std::string> sensorsSet(sensorsList, sensorsList + sizeof(sensorsList) / sizeof(sensorsList[0]));
 
 
 Log
@@ -141,6 +145,8 @@ getLog(std::string file) {
     std::string vehicle_name = "unknown";
 
     std::set<std::string> sensors_tmp;
+
+    double depth = 0.0;
 
     try
     {
@@ -232,16 +238,25 @@ getLog(std::string file) {
                         if((*it1)->getId() == DUNE_IMC_SETENTITYPARAMETERS)
                         {
                             t_sep = static_cast<const IMC::SetEntityParameters *>(*it1);
-                            sensors_tmp.insert(t_sep->name);
+                            if(sensorsSet.find((t_sep->name)) != sensorsSet.end())
+                                sensors_tmp.insert(t_sep->name);
                         }
                     }
                 }
-
             }
             else if(msg->getId() == DUNE_IMC_SETENTITYPARAMETERS)
             {
                 IMC::SetEntityParameters* etparam = static_cast<IMC::SetEntityParameters*>(msg);
-                sensors_tmp.insert(etparam->name);
+
+                if(sensorsSet.find((etparam->name)) != sensorsSet.end())
+                    sensors_tmp.insert(etparam->name);
+            }
+            else if(msg->getId() == DUNE_IMC_DEPTH)
+            {
+                IMC::Depth* currDepth = static_cast<IMC::Depth*>(msg);
+                if(currDepth->value > depth){
+                    depth = currDepth->value;
+                }
             }
 /*            else if (msg->getId() == DUNE_IMC_SIMULATEDSTATE)
             {
@@ -291,8 +306,9 @@ getLog(std::string file) {
     std::cout << "last_lon : " << lonStart << std::endl;
     std::cout << "date : " << date << std::endl;
     std::cout << "duration : " << duration << std::endl;
-    
-    return Log(log_name, vehicle_name, sensors, distance, latStart, lonStart, date, duration);
+    std::cout << "depth : " << depth << std::endl;
+
+    return Log(log_name, vehicle_name, sensors, distance, latStart, lonStart, date, duration, depth);
 }
 
 void
@@ -340,7 +356,7 @@ getDataFiles(const char* directory, std::vector<std::string> &result) {
 void
 addToDataBase(Database::Connection* db, Log log) {
     //DUNE::Database::Connection db(database, DUNE::Database::Connection::CF_CREATE);
-    //db.beginTransaction();
+    db->beginTransaction();
     DUNE::Database::Statement insertionLog(c_insert_log_stmt, *db);
     insertionLog << log.name
               << log.vehicle
@@ -350,7 +366,8 @@ addToDataBase(Database::Connection* db, Log log) {
               << log.date
               << "no"
               << "yes"
-              << log.duration;
+              << log.duration
+              << log.maxDepth;
     insertionLog.execute();
 
     for(size_t i = 0; i < log.sensors.size(); i++) {
@@ -361,10 +378,10 @@ addToDataBase(Database::Connection* db, Log log) {
         insertionLogSensor.execute();
     }
 
-    //db.commit();
+    db->commit();
 
     //test database
-    DUNE::Database::Statement query("SELECT * FROM LOG", *db);
+  /*  DUNE::Database::Statement query("SELECT * FROM LOG", *db);
 
     while (query.execute()) {
         std::string name;
@@ -374,6 +391,7 @@ addToDataBase(Database::Connection* db, Log log) {
         double lonStart;
         std::time_t date;
         double duration;
+        double maxDepth;
         std::string errors;
         std::string warnings;
 
@@ -386,7 +404,8 @@ addToDataBase(Database::Connection* db, Log log) {
               >> date
               >> errors
               >> warnings
-              >> duration;
+              >> duration
+              >> maxDepth;
 
         std::cout << std::endl;
         std::cout << "::: LOG DATA BASE ::::" << std::endl;
@@ -398,7 +417,8 @@ addToDataBase(Database::Connection* db, Log log) {
         std::cout << "date : " << date << std::endl;
         std::cout << "errors : " << errors << std::endl;
         std::cout << "warnings : " << warnings << std::endl;
-        std::cout << "duration : " << duration << std::endl << std::endl;
+        std::cout << "duration : " << duration << std::endl;
+        std::cout << "depth : " << maxDepth << std::endl << std::endl;
     }
 
     DUNE::Database::Statement query1("SELECT * FROM SENSOR", *db);
@@ -414,7 +434,7 @@ addToDataBase(Database::Connection* db, Log log) {
         query2 >> log_name >> sensor;
         std::cout << "log name : " << log_name << std::endl;
         std::cout << "sensor name : " << sensor << std::endl;
-    }
+    }*/
 }
 
 int
@@ -426,7 +446,7 @@ prepareDatabase(Database::Connection* db) {
     // Create sensor table and initialize them
     db->execute(c_sensor_table_stmt);
 
-    for(size_t i = 0; i < NSENSORS; i++)
+    for(size_t i = 0; i < sensorsSet.size(); i++)
     {
         Database::Statement sensor_insert(c_insert_sensor_stmt, *db);
         sensor_insert << sensorsList[i] ;
