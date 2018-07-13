@@ -32,6 +32,7 @@
 #include <sstream>
 #include <cstdio>
 #include <vector>
+#include <map>
 
 // DUNE headers.
 #include <DUNE/DUNE.hpp>
@@ -48,13 +49,13 @@ struct Log
     double latStart;
     double lonStart;
     std::time_t date;
-    //std::vector<std::string> errors;
+    std::string errors;
     //std::vector<std::string> warnings;
     double duration;
     double maxDepth;
 
     Log(const std::string& a_name, const std::string& a_vehicle, std::vector<std::string> sensors, double a_distance,
-        double a_latStart, double a_lonStart, std::time_t a_date, double a_duration, double a_depth):
+        double a_latStart, double a_lonStart, std::time_t a_date, double a_duration, double a_depth, const std::string& errors):
             name(a_name),
             vehicle(a_vehicle),
             distance(a_distance),
@@ -63,9 +64,9 @@ struct Log
             date(a_date),
             duration(a_duration),
             maxDepth(a_depth),
-            sensors(sensors)
-     /*errors(0),
-     warnings(0) */
+            sensors(sensors),
+            errors(errors)
+    /* warnings(0) */
     { }
 };
 
@@ -109,6 +110,30 @@ static const char* c_insert_log_stmt = "INSERT OR IGNORE INTO log VALUES(?,?,?,?
 static const std::string sensorsList[] = {"Ctd", "Sidescan", "Imu", "Multibeam", "Camera"};
 std::set<std::string> sensorsSet(sensorsList, sensorsList + sizeof(sensorsList) / sizeof(sensorsList[0]));
 
+std::string
+getErrors(std::map<int,std::string > entity_map, std::multimap<int,std::pair<std::string,std::string> > errors_map)
+{
+    std::string messageError = "";
+    std::set<std::string> errors_set;
+
+    for(std::map<int, std::string>::iterator it = entity_map.begin(); it != entity_map.end(); ++it)
+    {
+        std::pair<std::multimap<int, std::pair<std::string,std::string> >::iterator, std::multimap<int,
+                std::pair<std::string,std::string> >::iterator> r = errors_map.equal_range(it->first);
+
+        for (std::multimap<int, std::pair<std::string,std::string> >::iterator it2 = r.first; it2 != r.second; ++it2) {
+            std::string message =  it->second + "(" +  it2->second.first + "): " + it2->second.second;
+            errors_set.insert(message);
+        }
+    }
+
+    for(std::set<std::string>::iterator it = errors_set.begin(); it != errors_set.end(); ++it)
+    {
+        messageError += *it;
+    }
+
+    return messageError;
+}
 
 Log
 getLog(std::string file) {
@@ -144,7 +169,9 @@ getLog(std::string file) {
     bool got_name_veh = false;
     std::string vehicle_name = "unknown";
 
-    std::set<std::string> sensors_tmp;
+    std::set<std::string> sensors_set;
+    std::multimap<int,std::pair<std::string,std::string> > errors_map;
+    std::map<int,std::string > entity_map;
 
     double depth = 0.0;
 
@@ -239,7 +266,7 @@ getLog(std::string file) {
                         {
                             t_sep = static_cast<const IMC::SetEntityParameters *>(*it1);
                             if(sensorsSet.find((t_sep->name)) != sensorsSet.end())
-                                sensors_tmp.insert(t_sep->name);
+                                sensors_set.insert(t_sep->name);
                         }
                     }
                 }
@@ -249,7 +276,7 @@ getLog(std::string file) {
                 IMC::SetEntityParameters* etparam = static_cast<IMC::SetEntityParameters*>(msg);
 
                 if(sensorsSet.find((etparam->name)) != sensorsSet.end())
-                    sensors_tmp.insert(etparam->name);
+                    sensors_set.insert(etparam->name);
             }
             else if(msg->getId() == DUNE_IMC_DEPTH)
             {
@@ -257,6 +284,36 @@ getLog(std::string file) {
                 if(currDepth->value > depth){
                     depth = currDepth->value;
                 }
+            }
+            else if(msg->getId() == DUNE_IMC_ENTITYSTATE)
+            {
+                IMC::EntityState* entState = static_cast<IMC::EntityState*>(msg);
+
+                if( entState->state == IMC::EntityState::ESTA_NORMAL || entState->state == IMC::EntityState::ESTA_BOOT)
+                    continue;
+
+                std::string error;
+                std::pair <std::string,std::string> errorDescription;
+
+                if( entState->state == IMC::EntityState::ESTA_FAULT)
+                {
+                    errorDescription = std::make_pair(std::string("fault"),entState->description);
+                }
+                else if( entState->state == IMC::EntityState::ESTA_ERROR)
+                {
+                    errorDescription = std::make_pair(std::string("error"),entState->description);
+                }
+                else if(entState->state == IMC::EntityState::ESTA_FAILURE)
+                {
+                    errorDescription = std::make_pair(std::string("failure"),entState->description);
+                }
+
+                errors_map.insert(std::pair<int,std::pair<std::string,std::string> >(entState->getSourceEntity(),errorDescription));
+            }
+            else if(msg->getId() == DUNE_IMC_ENTITYINFO)
+            {
+                IMC::EntityInfo* entityInfo = static_cast<IMC::EntityInfo*>(msg);
+                entity_map.insert(std::pair<int,std::string>(entityInfo->id , entityInfo->label));
             }
 /*            else if (msg->getId() == DUNE_IMC_SIMULATEDSTATE)
             {
@@ -288,8 +345,9 @@ getLog(std::string file) {
     delete is;
 
     std::vector<std::string> sensors;
-    std::copy(sensors_tmp.begin(), sensors_tmp.end(), std::back_inserter(sensors));
+    std::copy(sensors_set.begin(), sensors_set.end(), std::back_inserter(sensors));
 
+    std::string errors = getErrors(entity_map, errors_map);
 
     /* TEST LOG */
     std::cout << std::endl;
@@ -307,8 +365,9 @@ getLog(std::string file) {
     std::cout << "date : " << date << std::endl;
     std::cout << "duration : " << duration << std::endl;
     std::cout << "depth : " << depth << std::endl;
+    std::cout << "errors : " << errors << std::endl;
 
-    return Log(log_name, vehicle_name, sensors, distance, latStart, lonStart, date, duration, depth);
+    return Log(log_name, vehicle_name, sensors, distance, latStart, lonStart, date, duration, depth, errors);
 }
 
 void
@@ -364,7 +423,7 @@ addToDataBase(Database::Connection* db, Log log) {
               << log.latStart
               << log.lonStart
               << log.date
-              << "no"
+              << log.errors
               << "yes"
               << log.duration
               << log.maxDepth;
@@ -464,7 +523,8 @@ prepareDatabase(Database::Connection* db) {
 int
 main(int32_t argc, char** argv) {
 
-    // home/ana/workspace/lsts/build/log/lauv-noptilus-2/20180709/142145_cmd-lauv-noptilus-2/Data.lsf.gz /home/ana/workspace/lsts/database.db
+    // /home/ana/workspace/lsts/build/log/lauv-noptilus-2/20180709/142145_cmd-lauv-noptilus-2 /home/ana/workspace/lsts/database.db
+    // /home/ana/workspace/lsts/build/log/lauv-noptilus-2/20180713 - 1 failure
     if (argc <= 2) {
         std::cerr << "Usage: " << argv[0] << " <path_directory> " << "<path_database/database.db>" << std::endl;
         return 1;
@@ -488,6 +548,9 @@ main(int32_t argc, char** argv) {
         Log log = getLog(result[i]);
 
         // add to database (...)
+        if(log.name == "unknown")
+            continue;
+
         addToDataBase(db, log);
     }
 
