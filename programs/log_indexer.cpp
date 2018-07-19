@@ -161,7 +161,7 @@ getWarnings(std::map<int,std::string > entity_map, std::multimap<int,std::string
 }
 
 
-Log
+Log*
 getLog(std::string file) {
     std::istream* is = 0;
     Compression::Methods method = Compression::Factory::detect(file.c_str());
@@ -353,26 +353,16 @@ getLog(std::string file) {
                 }
 
             }
-/*            else if (msg->getId() == DUNE_IMC_SIMULATEDSTATE)
+            else if (msg->getId() == DUNE_IMC_SIMULATEDSTATE)
             {
                 // since it has simulated state let us ignore this log
                 ignore = true;
                 delete msg;
                 std::cerr << "this is a simulated log";
-                break;
-            }*/
+                return NULL;
+            }
 
             delete msg;
-
-            // ignore idles
-            // either has the string _idle or has only the time.
-            /*           if (log_name.find("_idle") != std::string::npos ||
-                           log_name.size() == 15)
-                       {
-                           ignore = true;
-                           std::cerr << "this is an idle log";
-                           break;
-                       }*/
         }
     }
     catch (std::runtime_error& e)
@@ -408,10 +398,10 @@ getLog(std::string file) {
     std::cout << "errors : " << errors << std::endl;
     std::cout << "warnings : " << warnings << std::endl;
 
-    return Log(log_name, vehicle_name, sensors, distance, latStart, lonStart, date, duration, depth, errors, warnings);
+    return new Log(log_name, vehicle_name, sensors, distance, latStart, lonStart, date, duration, depth, errors, warnings);
 }
 
-void
+int
 getDataFiles(const char* directory, std::vector<std::string> &result) {
 
     try
@@ -439,13 +429,13 @@ getDataFiles(const char* directory, std::vector<std::string> &result) {
                     if (std::strcmp(fname, fileName) == 0) {
                         //append to result
                         result.push_back(fname);
-                        continue;
                     }
                 }
             }
             else
             {
-                //todo error
+                std::cerr << "ERROR: to searching file." << std::endl;
+                return -1;
             }
         }
     }
@@ -457,30 +447,32 @@ getDataFiles(const char* directory, std::vector<std::string> &result) {
         if(std::strcmp(fileName, file_logs) == 0)
             result.push_back(directory);
     }
+
+    return 0;
 }
 
 void
-addToDataBase(Database::Connection* db, Log log) {
+addToDataBase(Database::Connection* db, Log* log) {
     //DUNE::Database::Connection db(database, DUNE::Database::Connection::CF_CREATE);
     db->beginTransaction();
     DUNE::Database::Statement insertionLog(c_insert_log_stmt, *db);
-    insertionLog << log.name
-              << log.vehicle
-              << log.distance
-              << log.latStart
-              << log.lonStart
-              << log.date
-              << log.errors
-              << log.warnings
-              << log.duration
-              << log.maxDepth;
+    insertionLog << log->name
+              << log->vehicle
+              << log->distance
+              << log->latStart
+              << log->lonStart
+              << log->date
+              << log->errors
+              << log->warnings
+              << log->duration
+              << log->maxDepth;
     insertionLog.execute();
 
-    for(size_t i = 0; i < log.sensors.size(); i++) {
+    for(size_t i = 0; i < log->sensors.size(); i++) {
 
         DUNE::Database::Statement insertionLogSensor(c_insert_log_sensor_stmt, *db);
-        insertionLogSensor << log.name
-                           << log.sensors[i];
+        insertionLogSensor << log->name
+                           << log->sensors[i];
         insertionLogSensor.execute();
     }
 
@@ -591,13 +583,16 @@ main(int32_t argc, char** argv) {
         std::cout << std::endl << result[i] << std::endl;
 
         // get log information
-        Log log = getLog(result[i]);
+        Log* log = getLog(result[i]);
 
-        // add to database (...)
-        if(log.name == "unknown")
+        if(log == NULL || log->name == "unknown") {
+            delete log;
             continue;
+        }
 
         addToDataBase(db, log);
+
+        delete log;
     }
 
     return 0;
