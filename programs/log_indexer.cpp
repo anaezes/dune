@@ -110,6 +110,8 @@ static const char* c_insert_log_stmt = "INSERT OR IGNORE INTO log VALUES(?,?,?,?
 static const std::string sensorsList[] = {"Ctd", "Sidescan", "Imu", "Multibeam", "Camera"};
 std::set<std::string> sensorsSet(sensorsList, sensorsList + sizeof(sensorsList) / sizeof(sensorsList[0]));
 
+static const char* file_logs = "/Data.lsf.gz" ;
+
 std::string
 getErrors(std::map<int,std::string > entity_map, std::multimap<int,std::pair<std::string,std::string> > errors_map)
 {
@@ -418,7 +420,7 @@ getDataFiles(const char* directory, std::vector<std::string> &result) {
         const char* fname = 0;
 
         std::string str = directory;
-        str += "/Data.lsf.gz";
+        str += file_logs;
         const char* fileName =  str.c_str();
 
         while ((fname = dir.readEntry(Directory::RD_FULL_NAME)))
@@ -449,7 +451,10 @@ getDataFiles(const char* directory, std::vector<std::string> &result) {
     }
     catch (...) //file
     {
-        if(std::strstr(directory, "/Data.lsf.gz") != NULL)
+        int len = strlen(directory);
+        const char* fileName = &directory[len-12];
+
+        if(std::strcmp(fileName, file_logs) == 0)
             result.push_back(directory);
     }
 }
