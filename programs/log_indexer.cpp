@@ -122,7 +122,7 @@ getErrors(std::map<int,std::string > entity_map, std::multimap<int,std::pair<std
                 std::pair<std::string,std::string> >::iterator> r = errors_map.equal_range(it->first);
 
         for (std::multimap<int, std::pair<std::string,std::string> >::iterator it2 = r.first; it2 != r.second; ++it2) {
-            std::string message =  it->second + "(" +  it2->second.first + "): " + it2->second.second;
+            std::string message =  it->second + "(" +  it2->second.first + "): " + it2->second.second + "; ";
             errors_set.insert(message);
         }
     }
@@ -404,12 +404,15 @@ getDataFiles(const char* directory, std::vector<std::string> &result) {
             }
             else
             {
-                //error
+                //todo error
             }
         }
     }
-    catch (...)
-    { }
+    catch (...) //file
+    {
+        if(std::strstr(directory, "/Data.lsf.gz") != NULL)
+            result.push_back(directory);
+    }
 }
 
 void
@@ -524,7 +527,6 @@ int
 main(int32_t argc, char** argv) {
 
     // /home/ana/workspace/lsts/build/log/lauv-noptilus-2/20180709/142145_cmd-lauv-noptilus-2 /home/ana/workspace/lsts/database.db
-    // /home/ana/workspace/lsts/build/log/lauv-noptilus-2/20180713 - 1 failure
     if (argc <= 2) {
         std::cerr << "Usage: " << argv[0] << " <path_directory> " << "<path_database/database.db>" << std::endl;
         return 1;
