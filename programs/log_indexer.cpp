@@ -50,12 +50,12 @@ struct Log
     double lonStart;
     std::time_t date;
     std::string errors;
-    //std::vector<std::string> warnings;
+    std::string warnings;
     double duration;
     double maxDepth;
 
     Log(const std::string& a_name, const std::string& a_vehicle, std::vector<std::string> sensors, double a_distance,
-        double a_latStart, double a_lonStart, std::time_t a_date, double a_duration, double a_depth, const std::string& errors):
+        double a_latStart, double a_lonStart, std::time_t a_date, double a_duration, double a_depth, const std::string& errors, const std::string& warnings):
             name(a_name),
             vehicle(a_vehicle),
             distance(a_distance),
@@ -65,9 +65,9 @@ struct Log
             duration(a_duration),
             maxDepth(a_depth),
             sensors(sensors),
-            errors(errors)
-    /* warnings(0) */
-    { }
+            errors(errors),
+            warnings(warnings)
+            { }
 };
 
 // Minimum rpm before starting to assume that the vehicle is moving
@@ -134,6 +134,30 @@ getErrors(std::map<int,std::string > entity_map, std::multimap<int,std::pair<std
 
     return messageError;
 }
+std::string
+getWarnings(std::map<int,std::string > entity_map, std::multimap<int,std::string> warnings_map) {
+    std::string messageWarning = "";
+    std::set<std::string> warnings_set;
+
+    for(std::map<int, std::string>::iterator it = entity_map.begin(); it != entity_map.end(); ++it)
+    {
+        std::pair<std::multimap<int, std::string>::iterator, std::multimap<int,
+                std::string> ::iterator> r = warnings_map.equal_range(it->first);
+
+        for (std::multimap<int, std::string> ::iterator it2 = r.first; it2 != r.second; ++it2) {
+            std::string message =  it->second + ": " +  it2->second + "; ";
+            warnings_set.insert(message);
+        }
+    }
+
+    for(std::set<std::string>::iterator it = warnings_set.begin(); it != warnings_set.end(); ++it)
+    {
+        messageWarning += *it;
+    }
+
+    return messageWarning;
+}
+
 
 Log
 getLog(std::string file) {
@@ -172,6 +196,8 @@ getLog(std::string file) {
     std::set<std::string> sensors_set;
     std::multimap<int,std::pair<std::string,std::string> > errors_map;
     std::map<int,std::string > entity_map;
+
+    std::multimap<int,std::string > warnings_map;
 
     double depth = 0.0;
 
@@ -315,6 +341,16 @@ getLog(std::string file) {
                 IMC::EntityInfo* entityInfo = static_cast<IMC::EntityInfo*>(msg);
                 entity_map.insert(std::pair<int,std::string>(entityInfo->id , entityInfo->label));
             }
+            else if(msg->getId() == DUNE_IMC_LOGBOOKENTRY)
+            {
+                IMC::LogBookEntry* entry= static_cast<IMC::LogBookEntry*>(msg);
+
+                //std::cout << "name log book entry: " <<  entry->getSourceEntity() << std::endl;
+                if(entry->type == IMC::LogBookEntry::LBET_WARNING) {
+                    warnings_map.insert(std::pair<int,std::string >(entry->getSourceEntity(),entry->text));
+                }
+
+            }
 /*            else if (msg->getId() == DUNE_IMC_SIMULATEDSTATE)
             {
                 // since it has simulated state let us ignore this log
@@ -349,6 +385,8 @@ getLog(std::string file) {
 
     std::string errors = getErrors(entity_map, errors_map);
 
+    std::string warnings = getWarnings(entity_map, warnings_map);
+
     /* TEST LOG */
     std::cout << std::endl;
     std::cout << "::: LOG ::::" << std::endl;
@@ -366,8 +404,9 @@ getLog(std::string file) {
     std::cout << "duration : " << duration << std::endl;
     std::cout << "depth : " << depth << std::endl;
     std::cout << "errors : " << errors << std::endl;
+    std::cout << "warnings : " << warnings << std::endl;
 
-    return Log(log_name, vehicle_name, sensors, distance, latStart, lonStart, date, duration, depth, errors);
+    return Log(log_name, vehicle_name, sensors, distance, latStart, lonStart, date, duration, depth, errors, warnings);
 }
 
 void
@@ -427,7 +466,7 @@ addToDataBase(Database::Connection* db, Log log) {
               << log.lonStart
               << log.date
               << log.errors
-              << "yes"
+              << log.warnings
               << log.duration
               << log.maxDepth;
     insertionLog.execute();
