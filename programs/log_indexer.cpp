@@ -44,6 +44,7 @@ struct Log
 {
     std::string name;
     std::string vehicle;
+    int year;
     std::vector<std::string> sensors;
     double distance;
     double latStart;
@@ -54,10 +55,12 @@ struct Log
     double duration;
     double maxDepth;
 
-    Log(const std::string& a_name, const std::string& a_vehicle, std::vector<std::string> sensors, double a_distance,
-        double a_latStart, double a_lonStart, std::time_t a_date, double a_duration, double a_depth, const std::string& errors, const std::string& warnings):
+    Log(const std::string& a_name, const std::string& a_vehicle, const int& year, const std::vector<std::string>& sensors,
+        const double& a_distance, const  double& a_latStart, const double &a_lonStart,const  std::time_t& a_date,
+        const double& a_duration, const double& a_depth, const std::string& errors, const std::string& warnings):
             name(a_name),
             vehicle(a_vehicle),
+            year(year),
             distance(a_distance),
             latStart(a_latStart),
             lonStart(a_lonStart),
@@ -81,6 +84,7 @@ static const char* c_log_table_stmt =
         "CREATE TABLE IF NOT EXISTS log ( "
         "name text PRIMARY KEY,"
         "vehicle text NOT NULL,"
+        "year INTEGER NOT NULL,"
         "distTravelled REAL NOT NULL,"
         "startLat REAL NOT NULL,"
         "startLon REAL NOT NULL,"
@@ -105,7 +109,7 @@ static const char* c_log_sensor_table_stmt =
 
 static const char* c_insert_sensor_stmt = "INSERT OR IGNORE INTO sensor VALUES(?)";
 static const char* c_insert_log_sensor_stmt = "INSERT OR IGNORE INTO log_sensor VALUES(?,?)";
-static const char* c_insert_log_stmt = "INSERT OR IGNORE INTO log VALUES(?,?,?,?,?,?,?,?,?,?)";
+static const char* c_insert_log_stmt = "INSERT OR IGNORE INTO log VALUES(?,?,?,?,?,?,?,?,?,?,?)";
 
 static const std::string sensorsList[] = {"Ctd", "Sidescan", "Imu", "Multibeam", "Camera"};
 std::set<std::string> sensorsSet(sensorsList, sensorsList + sizeof(sensorsList) / sizeof(sensorsList[0]));
@@ -179,7 +183,9 @@ getLog(std::string file) {
     double last_lat, last_lon;
     double latStart = 0.0;
     double lonStart = 0.0;
+
     std::time_t date = 0;
+    int year = 0;
 
     // Accumulated travelled distance
     double distance = 0.0;
@@ -379,11 +385,28 @@ getLog(std::string file) {
 
     std::string warnings = getWarnings(entity_map, warnings_map);
 
+    /* year */
+    tm utc_tm = *gmtime(&date);
+    tm local_tm = *localtime(&date);
+
+    if(date == 0)
+    {
+        std::string str = log_name.substr(0,4);
+        std::istringstream(str) >> year;
+    }
+    else
+    {
+         year = local_tm.tm_year + 1900;
+    }
+
+
+
     /* TEST LOG */
     std::cout << std::endl;
     std::cout << "::: LOG ::::" << std::endl;
     std::cout << "log_name : " << log_name << std::endl;
     std::cout << "vehicle_name : " << vehicle_name << std::endl;
+    std::cout << "Year: " <<  year << std::endl;
     std::cout << "Sensors: " << std::endl;
 
     for(size_t i = 0; i < sensors.size();i++)
@@ -398,7 +421,7 @@ getLog(std::string file) {
     std::cout << "errors : " << errors << std::endl;
     std::cout << "warnings : " << warnings << std::endl;
 
-    return new Log(log_name, vehicle_name, sensors, distance, latStart, lonStart, date, duration, depth, errors, warnings);
+    return new Log(log_name, vehicle_name, year, sensors, distance, latStart, lonStart, date, duration, depth, errors, warnings);
 }
 
 int
@@ -458,6 +481,7 @@ addToDataBase(Database::Connection* db, Log* log) {
     DUNE::Database::Statement insertionLog(c_insert_log_stmt, *db);
     insertionLog << log->name
               << log->vehicle
+              << log->year
               << log->distance
               << log->latStart
               << log->lonStart
