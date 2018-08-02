@@ -398,7 +398,7 @@ getLog(std::string file) {
 
     
     /* TEST LOG */
-    std::cout << "log_name : " << log_name << std::endl;
+ /*   std::cout << "log_name : " << log_name << std::endl;
     std::cout << "vehicle_name : " << vehicle_name << std::endl;
     std::cout << "Year: " <<  year << std::endl;
     std::cout << "Sensors: " << std::endl;
@@ -413,7 +413,7 @@ getLog(std::string file) {
     std::cout << "duration : " << duration << std::endl;
     std::cout << "depth : " << depth << std::endl;
     std::cout << "errors : " << errors << std::endl;
-    std::cout << "warnings : " << warnings << std::endl;
+    std::cout << "warnings : " << warnings << std::endl;*/
 
     return new Log(log_name, vehicle_name, year, sensors, distance, latStart, lonStart, date, duration, depth, errors, warnings);
 }
