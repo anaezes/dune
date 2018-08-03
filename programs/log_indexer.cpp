@@ -203,9 +203,6 @@ getLog(std::string file, std::string logName) {
     // Accumulated travelled time
     double duration = 0.0;
 
-    //bool got_name_log = false;
-    //std::string log_name = getLogName(file);
-
     uint16_t sys_id = 0xffff;
 
     std::string vehicle_name = "unknown";
