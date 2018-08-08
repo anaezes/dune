@@ -111,8 +111,26 @@ static const char* c_insert_sensor_stmt = "INSERT OR IGNORE INTO sensor VALUES(?
 static const char* c_insert_log_sensor_stmt = "INSERT OR IGNORE INTO log_sensor VALUES(?,?)";
 static const char* c_insert_log_stmt = "INSERT OR IGNORE INTO log VALUES(?,?,?,?,?,?,?,?,?,?,?)";
 
-static const std::string sensorsList[] = {"Ctd", "Sidescan", "Imu", "Multibeam", "Camera"};
+static const std::string sensorsList[] = {"Ctd",
+                                          "Sidescan",
+                                          "Imu",
+                                          "Multibeam",
+                                          "Camera"};
+
 std::set<std::string> sensorsSet(sensorsList, sensorsList + sizeof(sensorsList) / sizeof(sensorsList[0]));
+
+
+static const std::string vehicleList[] = {"lauv-noptilus-1",
+                                          "lauv-noptilus-2",
+                                          "lauv-noptilus-3",
+                                          "lauv-xplore-1",
+                                          "lauv-xplore-2",
+                                          "lauv-xplore-2",
+                                          "lauv-xplore-3",
+                                          "lauv-xplore-4",
+                                          "lauv-xplore-5"};
+
+static const int n_vehicles = sizeof(vehicleList) / sizeof(vehicleList[0]);
 
 static const char* file_logs = "/Data.lsf.gz" ;
 
@@ -174,6 +192,19 @@ getLogName(std::string path, std::string nameFile) {
     return result;
 }
 
+std::string
+getVehicleName(std::string logName) {
+
+   int i = 0;
+   while(i < n_vehicles) {
+        if (logName.find(vehicleList[i]) !=std::string::npos)
+            return vehicleList[i];
+        i++;
+    }
+
+    return "unknown";
+}
+
 
 Log*
 getLog(std::string file, std::string logName) {
@@ -205,7 +236,7 @@ getLog(std::string file, std::string logName) {
 
     uint16_t sys_id = 0xffff;
 
-    std::string vehicle_name = "unknown";
+    std::string vehicle_name = "";
 
     std::set<std::string> sensors_set;
     std::multimap<int,std::pair<std::string,std::string> > errors_map;
@@ -367,25 +398,30 @@ getLog(std::string file, std::string logName) {
 
     delete is;
 
+
+    // get sensors list
     std::vector<std::string> sensors;
     std::copy(sensors_set.begin(), sensors_set.end(), std::back_inserter(sensors));
 
+    // get errors list
     std::string errors = getErrors(entity_map, errors_map);
 
+    // get warnings list
     std::string warnings = getWarnings(entity_map, warnings_map);
 
-    // Year
+    // get year
     tm utc_tm = *gmtime(&date);
     tm local_tm = *localtime(&date);
 
     if(date == 0)
-    {
         std::istringstream(logName.substr(0,4)) >> year;
-    }
     else
-    {
          year = local_tm.tm_year + 1900;
-    }
+
+    // get vehicle name if don't have already
+    if(vehicle_name == "")
+        vehicle_name = getVehicleName(logName);
+
 
     return new Log(logName, vehicle_name, year, sensors, distance, latStart, lonStart, date, duration, depth, errors, warnings);
 }
@@ -505,7 +541,11 @@ int
 main(int32_t argc, char** argv) {
 
     if (argc <= 3) {
-        std::cerr << "Usage: " << argv[0] << " <path_directory> " << "<path_database/database.db>" << std::endl;
+        std::cerr << "Usage: " << argv[0]
+                  << " <path_directory>"
+                  << " <path_database/database.db>"
+                  << " base to extract log names"
+                  << std::endl;
         return 1;
     }
 
