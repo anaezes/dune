@@ -128,7 +128,9 @@ static const std::string vehicleList[] = {"lauv-noptilus-1",
                                           "lauv-xplore-2",
                                           "lauv-xplore-3",
                                           "lauv-xplore-4",
-                                          "lauv-xplore-5"};
+                                          "lauv-xplore-5",
+                                          "lauv-nemo-1",
+                                          "lauv-xtreme-2"};
 
 static const int n_vehicles = sizeof(vehicleList) / sizeof(vehicleList[0]);
 
@@ -208,6 +210,8 @@ getVehicleName(std::string logName) {
 
 Log*
 getLog(std::string file, std::string logName) {
+
+    //open file
     std::istream* is = 0;
     Compression::Methods method = Compression::Factory::detect(file.c_str());
     if (method == METHOD_UNKNOWN)
@@ -217,31 +221,42 @@ getLog(std::string file, std::string logName) {
 
     IMC::Message* msg = NULL;
 
+    // current rpms of vehicle
     uint16_t curr_rpm = 0;
 
     bool got_state = false;
     IMC::EstimatedState estate;
 
-    double last_lat, last_lon;
+    // latitude and longitude
+    double last_lat;
+    double last_lon;
     double latStart = 0.0;
     double lonStart = 0.0;
 
-    std::time_t date = 0;
-    int year = 0;
-
     // Accumulated travelled distance
     double distance = 0.0;
+
     // Accumulated travelled time
     double duration = 0.0;
 
-    uint16_t sys_id = 0xffff;
+    // date
+    std::time_t date = 0;
+    int year = 0;
 
+    // vehicle name
+    uint16_t sys_id = 0xffff;
     std::string vehicle_name = "";
 
+    // sensors
     std::set<std::string> sensors_set;
-    std::multimap<int,std::pair<std::string,std::string> > errors_map;
+
+    // all entity's
     std::map<int,std::string > entity_map;
 
+    // errors
+    std::multimap<int,std::pair<std::string,std::string> > errors_map;
+
+    // sensors
     std::multimap<int,std::string > warnings_map;
 
     double depth = 0.0;
@@ -465,7 +480,7 @@ getDataFiles(const char* directory, std::vector<std::string> &result) {
             }
         }
     }
-    catch (...) //file
+    catch (...) // file
     {
         int len = strlen(directory);
         const char* fileName = &directory[len-12];
@@ -511,7 +526,7 @@ addToDataBase(Database::Connection* db, Log* log) {
         return -1;
     }
 
-        return 0;
+     return 0;
 }
 
 
