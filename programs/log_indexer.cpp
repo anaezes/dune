@@ -120,7 +120,7 @@ static const std::string sensorsList[] = {"Ctd",
 std::set<std::string> sensorsSet(sensorsList, sensorsList + sizeof(sensorsList) / sizeof(sensorsList[0]));
 
 
-static const std::string vehicleList[] = {"lauv-noptilus-1",
+static const std::string vehicles[] = {"lauv-noptilus-1",
                                           "lauv-noptilus-2",
                                           "lauv-noptilus-3",
                                           "lauv-xplore-1",
@@ -130,9 +130,14 @@ static const std::string vehicleList[] = {"lauv-noptilus-1",
                                           "lauv-xplore-4",
                                           "lauv-xplore-5",
                                           "lauv-nemo-1",
-                                          "lauv-xtreme-2"};
+                                          "lauv-xtreme-2",
+                                          "x8-05",
+                                          "x8-06",
+                                          "x8-07",
+                                          "vtol-02"
+                                          };
 
-static const int n_vehicles = sizeof(vehicleList) / sizeof(vehicleList[0]);
+static const int n_vehicles = sizeof(vehicles) / sizeof(vehicles[0]);
 
 static const char* file_logs = "/Data.lsf.gz" ;
 
@@ -199,8 +204,8 @@ getVehicleName(std::string logName) {
 
    int i = 0;
    while(i < n_vehicles) {
-        if (logName.find(vehicleList[i]) !=std::string::npos)
-            return vehicleList[i];
+        if (logName.find(vehicles[i]) !=std::string::npos)
+            return vehicles[i];
         i++;
     }
 
