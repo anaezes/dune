@@ -44,6 +44,7 @@ struct Log
 {
     std::string name;
     std::string vehicle;
+    std::string vehicleType;
     int year;
     std::vector<std::string> sensors;
     double distance;
@@ -54,12 +55,14 @@ struct Log
     std::string warnings;
     double duration;
     double maxDepth;
+    double maxAltitude;
 
-    Log(const std::string& a_name, const std::string& a_vehicle, const int& year, const std::vector<std::string>& sensors,
+    Log(const std::string& a_name, const std::string& a_vehicle, const std::string& type,const int& year, const std::vector<std::string>& sensors,
         const double& a_distance, const  double& a_latStart, const double &a_lonStart,const  std::time_t& a_date,
-        const double& a_duration, const double& a_depth, const std::string& errors, const std::string& warnings):
+        const double& a_duration, const double& a_depth, const double& a_alt, const std::string& errors, const std::string& warnings):
             name(a_name),
             vehicle(a_vehicle),
+            vehicleType(type),
             year(year),
             distance(a_distance),
             latStart(a_latStart),
@@ -67,6 +70,7 @@ struct Log
             date(a_date),
             duration(a_duration),
             maxDepth(a_depth),
+            maxAltitude(a_alt),
             sensors(sensors),
             errors(errors),
             warnings(warnings)
@@ -84,6 +88,7 @@ static const char* c_log_table_stmt =
         "CREATE TABLE IF NOT EXISTS log ( "
         "name text PRIMARY KEY,"
         "vehicle text NOT NULL,"
+        "type text,"
         "year INTEGER NOT NULL,"
         "distTravelled REAL NOT NULL,"
         "startLat REAL NOT NULL,"
@@ -92,7 +97,8 @@ static const char* c_log_table_stmt =
         "errors text,"
         "warnings text,"
         "duration REAL NOT NULL,"
-        "maxDepth REAL NOT NULL"
+        "maxDepth REAL NOT NULL,"
+        "maxAltitude REAL NOT NULL"
         ");";
 
 static const char* c_sensor_table_stmt =
@@ -109,7 +115,7 @@ static const char* c_log_sensor_table_stmt =
 
 static const char* c_insert_sensor_stmt = "INSERT OR IGNORE INTO sensor VALUES(?)";
 static const char* c_insert_log_sensor_stmt = "INSERT OR IGNORE INTO log_sensor VALUES(?,?)";
-static const char* c_insert_log_stmt = "INSERT OR IGNORE INTO log VALUES(?,?,?,?,?,?,?,?,?,?,?)";
+static const char* c_insert_log_stmt = "INSERT OR IGNORE INTO log VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)";
 
 static const std::string sensorsList[] = {"Ctd",
                                           "Sidescan",
@@ -213,6 +219,33 @@ getVehicleName(std::string logName) {
 }
 
 
+std::string
+getSystem(uint8_t type)
+{
+
+    if (type == IMC::SYSTEMTYPE_UUV)
+        return "uuv";
+    else if (type == IMC::SYSTEMTYPE_UAV)
+        return "uav";
+    else if (type == IMC::SYSTEMTYPE_USV)
+        return "usv";
+    else if (type == IMC::SYSTEMTYPE_UGV )
+        return "ugv";
+    else if (type == IMC::SYSTEMTYPE_CCU )
+        return "ccu";
+    else if (type == IMC::SYSTEMTYPE_MOBILESENSOR)
+        return "mobilesensor";
+    else if (type == IMC::SYSTEMTYPE_STATICSENSOR )
+        return "staticsensor";
+    else if (type == IMC::SYSTEMTYPE_HUMANSENSOR)
+        return "humansensor";
+    else if (type == IMC::SYSTEMTYPE_WSN )
+        return "wsn";
+    else
+        return "uv";
+}
+
+
 Log*
 getLog(std::string file, std::string logName) {
 
@@ -293,7 +326,6 @@ getLog(std::string file, std::string logName) {
                 if (ptr->op == IMC::LoggingControl::COP_STARTED)
                 {
                     sys_id = ptr->getSource();
-                    std::cout << "name: " << ptr->getName() << std::endl;
                     got_sys_id = true;
                 }
 
@@ -340,6 +372,15 @@ getLog(std::string file, std::string logName) {
                         }
                     }
                 }
+
+                IMC::EstimatedState* estimatedState = static_cast<IMC::EstimatedState*>(msg);
+                if(estimatedState->alt > altitude){
+                    altitude = estimatedState->alt;
+                }
+
+                if(estimatedState->depth > depth){
+                    depth = estimatedState->depth;
+                }
             }
             else if (msg->getId() == DUNE_IMC_RPM)
             {
@@ -372,13 +413,6 @@ getLog(std::string file, std::string logName) {
 
                 if(sensorsSet.find((etparam->name)) != sensorsSet.end())
                     sensors_set.insert(etparam->name);
-            }
-            else if(msg->getId() == DUNE_IMC_DEPTH)
-            {
-                IMC::Depth* currDepth = static_cast<IMC::Depth*>(msg);
-                if(currDepth->value > depth){
-                    depth = currDepth->value;
-                }
             }
             else if(msg->getId() == DUNE_IMC_ENTITYSTATE)
             {
@@ -457,12 +491,14 @@ getLog(std::string file, std::string logName) {
     else
          year = local_tm.tm_year + 1900;
 
+
     // get vehicle name if don't have already
     if(vehicle_name == "")
         vehicle_name = getVehicleName(logName);
 
+    std::string veh_type_name = getSystem(vehicle_type);
 
-    return new Log(logName, vehicle_name, year, sensors, distance, latStart, lonStart, date, duration, depth, errors, warnings);
+    return new Log(logName, vehicle_name, veh_type_name, year, sensors, distance, latStart, lonStart, date, duration, depth, altitude, errors, warnings);
 }
 
 
@@ -524,6 +560,7 @@ addToDataBase(Database::Connection* db, Log* log) {
         DUNE::Database::Statement insertionLog(c_insert_log_stmt, *db);
         insertionLog << log->name
                      << log->vehicle
+                     << log->vehicleType
                      << log->year
                      << log->distance
                      << log->latStart
@@ -532,7 +569,8 @@ addToDataBase(Database::Connection* db, Log* log) {
                      << log->errors
                      << log->warnings
                      << log->duration
-                     << log->maxDepth;
+                     << log->maxDepth
+                     << log->maxAltitude;
         insertionLog.execute();
 
         for (size_t i = 0; i < log->sensors.size(); i++) {
