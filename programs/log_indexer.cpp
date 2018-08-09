@@ -230,6 +230,8 @@ getLog(std::string file, std::string logName) {
     uint16_t curr_rpm = 0;
 
     bool got_state = false;
+    bool got_sys_id = false;
+    bool got_vehicle = false;
     IMC::EstimatedState estate;
 
     // latitude and longitude
@@ -248,9 +250,10 @@ getLog(std::string file, std::string logName) {
     std::time_t date = 0;
     int year = 0;
 
-    // vehicle name
+    // vehicle
     uint16_t sys_id = 0xffff;
     std::string vehicle_name = "";
+    u_int8_t vehicle_type = 0 ;
 
     // sensors
     std::set<std::string> sensors_set;
@@ -265,19 +268,35 @@ getLog(std::string file, std::string logName) {
     std::multimap<int,std::string > warnings_map;
 
     double depth = 0.0;
+    double altitude = 0.0;
+
 
     try
     {
         bool first = true;
         while ((msg = IMC::Packet::deserialize(*is)) != 0)
         {
-            if (msg->getId() == DUNE_IMC_ANNOUNCE)
+            if (msg->getId() == DUNE_IMC_ANNOUNCE && !got_vehicle)
             {
                 IMC::Announce* ptr = static_cast<IMC::Announce*>(msg);
                 if (sys_id == ptr->getSource())
                 {
                     vehicle_name = ptr->sys_name;
+                    vehicle_type = ptr->sys_type;
+                    got_vehicle = true;
                 }
+            }
+            else if (msg->getId() == DUNE_IMC_LOGGINGCONTROL && !got_sys_id)
+            {
+                IMC::LoggingControl* ptr = static_cast<IMC::LoggingControl*>(msg);
+
+                if (ptr->op == IMC::LoggingControl::COP_STARTED)
+                {
+                    sys_id = ptr->getSource();
+                    std::cout << "name: " << ptr->getName() << std::endl;
+                    got_sys_id = true;
+                }
+
             }
             else if (msg->getId() == DUNE_IMC_ESTIMATEDSTATE)
             {
