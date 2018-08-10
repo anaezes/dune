@@ -286,6 +286,7 @@ getLog(std::string file, std::string logName) {
     // vehicle
     uint16_t sys_id = 0xffff;
     std::string vehicle_name = "";
+    std::string log = "";
     u_int8_t vehicle_type = 0 ;
 
     // sensors
@@ -326,6 +327,7 @@ getLog(std::string file, std::string logName) {
                 if (ptr->op == IMC::LoggingControl::COP_STARTED)
                 {
                     sys_id = ptr->getSource();
+                    log = ptr->name;
                     got_sys_id = true;
                 }
 
@@ -483,14 +485,12 @@ getLog(std::string file, std::string logName) {
     std::string warnings = getWarnings(entity_map, warnings_map);
 
     // get year
-    tm utc_tm = *gmtime(&date);
     tm local_tm = *localtime(&date);
 
     if(date == 0)
-        std::istringstream(logName.substr(0,4)) >> year;
+        std::istringstream(log.substr(0,4)) >> year;
     else
          year = local_tm.tm_year + 1900;
-
 
     // get vehicle name if don't have already
     if(vehicle_name == "")
