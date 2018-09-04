@@ -36,6 +36,7 @@
 
 // DUNE headers.
 #include <DUNE/DUNE.hpp>
+#include "Error.h"
 
 namespace Transports
 {
@@ -133,8 +134,7 @@ namespace Transports
         }
         else if (String::startsWith(reply, "+CMS ERROR:"))
         {
-          int code = -1;
-          std::sscanf(reply.c_str(), "+CMS ERROR: %d", &code);
+          int code = getErrorDescription(reply);
           throw std::runtime_error(String::str(DTR("SMS transmission failed with error code %d"), code));
         }
         else
@@ -159,7 +159,15 @@ namespace Transports
           getTask()->war("Can't read balance. Please check the USSD code or connection");
           return false;
         }
+
         std::string msg = readLine();
+
+        if (String::startsWith(msg, "+CMS ERROR:"))
+        {
+           int error_code = getErrorDescription(msg);
+           throw std::runtime_error(String::str(DTR("Request balance failed with error code %d"), error_code));
+        }
+
         Utils::String::toLowerCase(msg);
 
         size_t startPos = msg.find("saldo:");
@@ -268,6 +276,13 @@ namespace Transports
         {
           sendAT(String::str("+CPIN=%s", pin.c_str()));
           expectOK();
+          return;
+        }
+
+        if (String::startsWith(bfr, "+CMS ERROR:"))
+        {
+          int code = getErrorDescription(bfr);
+          throw std::runtime_error(String::str(DTR("Set pin failed with error code %d"), code));
         }
       }
 
@@ -291,6 +306,12 @@ namespace Transports
         if (header == "OK")
           return false;
 
+        if (String::startsWith(header, "+CMS ERROR:"))
+        {
+          int code = getErrorDescription(header);
+          throw std::runtime_error(String::str(DTR("SMS reception failed with error code %d"), code));
+        }
+
         if (!String::startsWith(header, "+CMGL:"))
           throw Hardware::UnexpectedReply();
 
@@ -307,13 +328,21 @@ namespace Transports
           throw Hardware::UnexpectedReply();
         }
 
-        if ((parts[2] != "\"\"") && (parts[2].size() <= 2))
-          throw Hardware::UnexpectedReply();
-
         location = parts[1];
         origin = std::string(parts[2], 1, parts[2].size() - 2);
         text = readLine();
         return true;
+      }
+
+      int
+      getErrorDescription(std::string msg) {
+          int code = -1;
+          std::sscanf(msg.c_str(), "+CMS ERROR: %d", &code);
+
+          const char* error_message = cms_error_str(code);
+          getTask()->war("Error: %s", error_message);
+
+          return code;
       }
     };
   }
