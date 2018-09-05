@@ -36,7 +36,7 @@
 
 // DUNE headers.
 #include <DUNE/DUNE.hpp>
-#include "Error.h"
+#include "Error.hpp"
 
 namespace Transports
 {
