@@ -27,8 +27,8 @@
 // Author: Ana Santos                                                       *
 //***************************************************************************
 
-#ifndef DUNE_ERROR_H
-#define DUNE_ERROR_H
+#ifndef TRANSPORTS_GSM_ERROR_HPP_INCLUDED_
+#define TRANSPORTS_GSM_ERROR_HPP_INCLUDED_
 
 // DUNE headers.
 #include <DUNE/DUNE.hpp>
