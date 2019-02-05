@@ -390,22 +390,17 @@ main(int32_t argc, char** argv) {
                         std::vector<char> ping_data = ptr->data;
                         std::memcpy(&data[1000], &ping_data.at(0), c_data_points_channel * 2);
 
-                        // Frequency
-                        frequency = ptr->frequency / 1000;
-                        data[49] = frequency >> 8;
-                        data[50] = frequency & 0xff;
-
                         // Timestamp
-                       double time = ptr->getTimeStamp();
-                       long time_ms = time * 1000;
-                       setTimeInfo(data, time_ms);
+                        double time = ptr->getTimeStamp();
+                        long time_ms = time * 1000;
+                        setTimeInfo(data, time_ms);
 
-                       // Repetition rate (time between pings)
-                       time_between_pings = time_ms - last_time;
-                       data[49] = time_between_pings >> 8;
-                       data[50] = time_between_pings & 0xff;
+                        // Repetition rate (time between pings)
+                        time_between_pings = time_ms - last_time;
+                        data[49] = time_between_pings >> 8;
+                        data[50] = time_between_pings & 0xff;
 
-                       last_time = time_ms;
+                        last_time = time_ms;
                     }
                 }
                 else if(msg->getId() == DUNE_IMC_SETENTITYPARAMETERS)
