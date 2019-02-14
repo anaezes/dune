@@ -454,6 +454,7 @@ main(int32_t argc, char** argv) {
                     data_file << data[i] ;
 
                 received_sonar_data = false;
+                received_estimated_state = false;
             }
 
             data_file.close();
