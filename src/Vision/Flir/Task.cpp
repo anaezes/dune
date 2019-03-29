@@ -137,11 +137,13 @@ namespace Vision
     // Return response max size.
     static const int c_response_size = 22;
 
+    static const int c_heartbeat_size = 10;
+
     // Return header request/response size.
     static const uint8_t c_header_size = 8;
 
     // Return heartbeat body request/response size.
-    static const uint8_t c_heartbeat_size = 0x00;
+    static const uint8_t c_heartbeat_body_size = 0x00;
 
     // Return time synchronization body request size.
     static const uint8_t c_time_sync_req_size = 0x08;
@@ -187,6 +189,10 @@ namespace Vision
 
     struct Task: public DUNE::Tasks::Task
     {
+
+      //! Task arguments.
+      Arguments m_args;
+
       // TCP socket control.
       TCPSocket* m_sock_control;
 
@@ -199,6 +205,9 @@ namespace Vision
       // Response
       uint8_t m_response[c_response_size];
 
+      //! Heartbeat timer
+      Time::Counter<float> m_timer_heartbeat;
+
       //! Constructor.
       //! @param[in] name task name.
       //! @param[in] ctx context.
@@ -207,24 +216,28 @@ namespace Vision
         m_sock_control(NULL),
         m_sock_notif(NULL)
       {
+        // Define configuration parameters.
+        paramActive(Tasks::Parameter::SCOPE_MANEUVER,
+                    Tasks::Parameter::VISIBILITY_USER);
+
         param("IPv4 Address", m_args.addr)
                 .defaultValue("192.168.10.19")
                 .description("IP address of the flir camera");
 
-        param("TCP port control", m_args.port_control)
+        param("TCP control", m_args.port_control)
                 .defaultValue("6000")
                 .minimumValue("0")
                 .maximumValue("65535")
                 .description("TCP port control");
 
-        param("TCP port notification", m_args.port_notification)
+        param("TCP notification", m_args.port_notification)
                 .defaultValue("6002")
                 .minimumValue("0")
                 .maximumValue("65535")
                 .description("TCP port notification");
 
-        std::memset(m_request, 0, sizeof(c_request_size));
-        std::memset(m_response, 0, sizeof(c_response_size));
+        std::memset(m_request, 0, c_request_size);
+        std::memset(m_response, 0, c_response_size);
 
       }
 
@@ -250,9 +263,6 @@ namespace Vision
       void
       onResourceAcquisition(void)
       {
-        m_sock_control = new TCPSocket();
-        m_sock_control->setNoDelay(true);
-
         m_sock_notif = new TCPSocket();
         m_sock_notif->setNoDelay(true);
       }
@@ -263,17 +273,12 @@ namespace Vision
       {
         try
         {
-          m_sock_control->connect(m_args.addr, m_args.port_control);
           heartbeat();
-
-          m_sock_notif->connect(m_args.addr, m_args.port_notification);
-          // TODO how to test ?
-
-          setEntityState(IMC::EntityState::ESTA_NORMAL, Status::CODE_IDLE);
+          m_timer_heartbeat.setTop(5);
         }
         catch (std::runtime_error& e)
         {
-          throw RestartNeeded(e.what(), 10.0, false);
+         throw RestartNeeded(e.what(), 10.0, false);
         }
       }
 
@@ -281,8 +286,28 @@ namespace Vision
       void
       onResourceRelease(void)
       {
-        Memory::clear(m_sock_control);
         Memory::clear(m_sock_notif);
+      }
+
+      //! Open short TCP connection
+      void
+      openConnection() {
+        // Open connection
+        m_sock_control = new TCPSocket();
+        m_sock_control->connect(m_args.addr, m_args.port_control);
+      }
+
+      //! Close short TCP connection
+      void
+      closeConnection() {
+        if (m_sock_control != NULL)
+          delete m_sock_control;
+      }
+
+      void
+      clearBuffers() {
+        memset(m_request, 0, c_request_size);
+        memset(m_response, 0, c_response_size);
       }
 
 
@@ -293,25 +318,44 @@ namespace Vision
         m_request[ID_CODE] = c_identification_code;
         m_request[STATUS_CODE] = SUCCESS;
         m_request[INST_NUMBER] = HEARTBEAT_REQ;
-        m_request[INST_LENGTH] = c_heartbeat_size;
+        m_request[INST_LENGTH] = c_heartbeat_body_size;
+
+        openConnection();
 
         // Write command
-        m_sock_control->write((char*)m_request, c_heartbeat_req_size);
+        int wr = m_sock_control->write((char*)m_request, c_request_size);
+        if(wr == -1)
+          debug("error to write...");
 
+        m_sock_control->flushOutput();
+
+        int rv = 0;
         // Read response
-        int rv = m_sock->read((char*)m_response, c_response_size);
-        if (rv != c_heartbeat_size)
+        try {
+             rv = m_sock_control->read((char *) m_response, c_response_size);
+          } catch(std::exception& e) {
+            err("Error: %s", e.what());
+          }
+
+        if (rv != c_heartbeat_size) {
+          debug("rv != c_heartbeat_size !!!");
           throw std::runtime_error(DTR("failed to get heartbeat response"));
+        }
 
+        //todo HEARTBEAT_RES
         if(m_response[INST_NUMBER] == HEARTBEAT_RES
-           && m_response[STATUS_CODE] == SUCCESS)
-          debug("Success to get heartbeat response");
+           && m_response[STATUS_CODE] == SUCCESS) {
+            debug("IT'S ALIVE...");
+            debug("Success to get heartbeat response");
+        }
 
+        closeConnection();
+        clearBuffers();
       }
 
 
       //! Take pictures start: can specify a single shot or timer shot (seconds)
-      void
+     /* void
       startTakePictures(uint8_t interval, uint8_t format, uint32_t id_picture)
       {
         m_request[ID_CODE] = c_identification_code;
@@ -334,7 +378,7 @@ namespace Vision
         m_sock_control->write((char *) m_request, c_pic_start_res_size);
 
         // Read response
-        int rv = m_sock->read((char *) m_response, c_response_size);
+        int rv = m_sock_control->read((char *) m_response, c_response_size);
         if(rv != c_pic_start_res_size)
           throw std::runtime_error(DTR("failed to get start take pictures response"));
 
@@ -368,13 +412,13 @@ namespace Vision
         m_sock_control->write((char *) m_request, c_pic_stop_req_size);
 
         // Read response
-        int rv = m_sock->read((char *) m_response, c_response_size);
+        int rv = m_sock_control->read((char *) m_response, c_response_size);
         if (rv != c_pic_stop_res_size)
           throw std::runtime_error(DTR("failed to get stop take pictures response"));
 
         if (m_response[INST_NUMBER] == STOP_PICTURES_RES)
           debug("Success to get stop pictures response");
-      }
+      }*/
 
 
       //! Main loop.
@@ -384,6 +428,11 @@ namespace Vision
         while (!stopping())
         {
           waitForMessages(1.0);
+
+          if(m_timer_heartbeat.overflow()) {
+            heartbeat();
+            m_timer_heartbeat.reset();
+          }
         }
       }
     };
