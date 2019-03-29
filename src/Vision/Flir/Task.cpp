@@ -353,72 +353,83 @@ namespace Vision
         clearBuffers();
       }
 
-
-      //! Take pictures start: can specify a single shot or timer shot (seconds)
-     /* void
-      startTakePictures(uint8_t interval, uint8_t format, uint32_t id_picture)
+      void
+      temperatureMeasurement()
       {
         m_request[ID_CODE] = c_identification_code;
         m_request[STATUS_CODE] = SUCCESS;
-        m_request[INST_NUMBER] = START_PICTURES_REQ;
-        m_request[INST_LENGTH] = c_pic_start_req_size;
+        m_request[INST_NUMBER] = TEMP_QUERY_REQ & 0xff;
+        m_request[INST_NUMBER+1] = TEMP_QUERY_REQ >> 8;
+        m_request[INST_LENGTH] = c_temp_query_req_size;
 
-        m_request[BODY]   = interval >> 8;
-        m_request[BODY+1] = interval & 0xff;
-
-        m_request[BODY+2] = format >> 8;
-        m_request[BODY+3] = format & 0xff;
-
-        m_request[BODY+6] = id_picture >> 24;
-        m_request[BODY+5] = id_picture >> 16;
-        m_request[BODY+6] = id_picture >>  8;
-        m_request[BODY+7] = id_picture & 0xff;
+        openConnection();
 
         // Write command
-        m_sock_control->write((char *) m_request, c_pic_start_res_size);
+        int wr = m_sock_control->write((char*)m_request, 10);
+        if(wr == -1)
+           debug("error to write...");
 
+        int rv = 0;
         // Read response
-        int rv = m_sock_control->read((char *) m_response, c_response_size);
-        if(rv != c_pic_start_res_size)
-          throw std::runtime_error(DTR("failed to get start take pictures response"));
+        try {
+           rv = m_sock_control->read((char *) m_response, 18 + 1);
+        } catch(std::exception& e) {
+           err("Error: %s", e.what());
+        }
 
-        if(m_response[INST_NUMBER] == START_PICTURES_RES && m_response[STATUS_CODE] == SUCCESS)
-          debug("Success to get start pictures response");
+        if (rv != 18)
+           throw std::runtime_error(DTR("failed to get temperature response"));
 
-        // todo check id
-        //uint8 aux[] = "Quiz";
-        // memcpy(aux, &m_response[BODY], 4);
-        //int i = atoi(aux);
+        uint16_t instruction;
+        mempcpy(&instruction, &m_response[2], 2);
 
-        if(m_response[BODY] == START_PICTURES_RES)
-          debug("Success to get start pictures response");
+        debug("Instruction dec: %d", instruction);
+        debug("instruction hex: %02x", instruction);
+
+        if(instruction == TEMP_QUERY_RES
+             && m_response[STATUS_CODE] == SUCCESS) {
+          debug("Success to get temperature response");
+          printTemperature();
+        }
+
+        closeConnection();
+        clearBuffers();
       }
 
-
-      //! Take pictures stop: can specify a single shot or timer shot (seconds)
       void
-      stopTakePictures(uint32_t id_picture) {
-        m_request[ID_CODE] = c_identification_code;
-        m_request[STATUS_CODE] = SUCCESS;
-        m_request[INST_NUMBER] = STOP_PICTURES_REQ;
-        m_request[INST_LENGTH] = c_pic_stop_req_size;
+      printTemperature() {
+        if(m_response[8] == 0)
+          debug("Temperature unit: ºC");
+        else
+          debug("Temperature unit: ºF");
 
-        m_request[BODY]   = id_picture >> 24;
-        m_request[BODY+1] = id_picture >> 16;
-        m_request[BODY+2] = id_picture >>  8;
-        m_request[BODY+3] = id_picture & 0xff;
+        if(m_response[9] == 0)
+          debug("Measurement points enabled : closed");
+        else
+          debug("Measurement points enabled : opening");
 
-        // Write command
-        m_sock_control->write((char *) m_request, c_pic_stop_req_size);
+        uint8_t emissivity = m_response[10] & 0xff;
+        debug("Emissivity: %d", emissivity);
 
-        // Read response
-        int rv = m_sock_control->read((char *) m_response, c_response_size);
-        if (rv != c_pic_stop_res_size)
-          throw std::runtime_error(DTR("failed to get stop take pictures response"));
+        uint8_t airTemperature = m_response[11] & 0xff;
+        debug("Air temperature: %d", airTemperature);
 
-        if (m_response[INST_NUMBER] == STOP_PICTURES_RES)
-          debug("Success to get stop pictures response");
-      }*/
+        uint8_t skyCondition = m_response[12] & 0xff;
+        if(skyCondition == 0)
+          debug("Sky Condition: clear skies");
+        else if(skyCondition == 25)
+          debug("Sky Condition: scattered skies");
+        else
+          debug("Sky Condition: cloudy skies");
+
+        uint8_t humidity = m_response[13] & 0xff;
+        debug("Humidity viewer: %d", humidity);
+
+        uint16_t distance;
+        mempcpy(&distance, &m_response[14], 2);
+        debug("Subject distance dec: %d", distance);
+        debug("Subject distance hex: %02x", distance);
+      }
 
 
       //! Main loop.
@@ -431,6 +442,7 @@ namespace Vision
 
           if(m_timer_heartbeat.overflow()) {
             heartbeat();
+            temperatureMeasurement();
             m_timer_heartbeat.reset();
           }
         }
