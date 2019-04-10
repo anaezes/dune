@@ -159,7 +159,7 @@ namespace Vision
     static const uint8_t c_rec_status_res_size = 0x04;
 
     // Return take pictures start body request size.
-    static const uint8_t c_pic_start_req_size = 0x08;
+    static const uint16_t c_pic_start_req_size = 0x08;
     // Return take pictures start body response size.
     static const uint8_t c_pic_start_res_size = 0x04;
 
@@ -372,7 +372,7 @@ namespace Vision
         int rv = 0;
         // Read response
         try {
-           rv = m_sock_control->read((char *) m_response, 18 + 1);
+           rv = m_sock_control->read((char *) m_response, c_response_size);
         } catch(std::exception& e) {
            err("Error: %s", e.what());
         }
