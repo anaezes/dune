@@ -432,10 +432,118 @@ namespace Vision
       }
 
 
+      //! Take pictures start: can specify a single shot or timer shot (seconds)
+      void
+      startTakePictures(uint8_t interval, uint8_t format, uint32_t id_picture)
+      {
+        debug("START take pictures");
+
+        m_request[ID_CODE] = c_identification_code;
+        m_request[STATUS_CODE] = SUCCESS;
+        m_request[INST_NUMBER] =  START_PICTURES_REQ & 0xff;
+        m_request[INST_NUMBER + 1] = START_PICTURES_REQ >> 8;
+        m_request[INST_LENGTH] = c_pic_start_req_size;
+
+        m_request[BODY] = interval;
+        m_request[BODY + 1] = format;
+
+        m_request[BODY + 4] = id_picture & 0xff;
+        m_request[BODY + 5] = id_picture >> 8;
+        m_request[BODY + 6] = id_picture >> 16;
+        m_request[BODY + 7] = id_picture >> 24 ;
+
+        // Open connection
+        openConnection();
+
+        // Write command
+        int wr = m_sock_control->write((char *) m_request, 18);
+        if(wr == -1)
+          debug("error to write...");
+
+        int rv = 0;
+        // Read response
+        try {
+          rv = m_sock_control->read((char *) m_response, c_response_size);
+         } catch(std::exception& e) {
+          err("Error: %s", e.what());
+        }
+
+        if(rv != 14)
+          throw std::runtime_error(DTR("failed to get start take pictures response"));
+
+        uint16_t instruction;
+        mempcpy(&instruction, &m_response[2], 2);
+
+        if(instruction == START_PICTURES_RES
+           && m_response[STATUS_CODE] == SUCCESS) {
+            debug("Success to get start pictures response");
+        }
+        else {
+            debug("Fail to get start pictures response");
+        }
+
+
+        closeConnection();
+        clearBuffers();
+      }
+
+
+      //! Take pictures stop: can specify a single shot or timer shot (seconds)
+      void
+      stopTakePictures(uint32_t id_picture) {
+
+         debug("STOP take pictures");
+
+         m_request[ID_CODE] = c_identification_code;
+         m_request[STATUS_CODE] = SUCCESS;
+         m_request[INST_NUMBER] = STOP_PICTURES_REQ & 0xff;
+         m_request[INST_NUMBER+1] = STOP_PICTURES_REQ >> 8;
+         m_request[INST_LENGTH] = c_pic_stop_req_size;
+
+         m_request[BODY] = id_picture & 0xff;
+         m_request[BODY+1] = id_picture >> 8;
+         m_request[BODY+2] = id_picture >> 16;
+         m_request[BODY+3] = id_picture >> 24;
+
+        openConnection();
+
+        // Write command
+        int wr = m_sock_control->write((char *) m_request, 14);
+        if(wr == -1)
+           debug("error to write...");
+
+        // Read response
+        int rv = m_sock_control->read((char *) m_response, c_response_size);
+
+        debug("rv: %d",rv);
+        if (rv != 10)
+           throw std::runtime_error(DTR("failed to get stop take pictures response"));
+
+        uint16_t instruction;
+        mempcpy(&instruction, &m_response[2], 2);
+
+        if(instruction == STOP_PICTURES_RES
+           && m_response[STATUS_CODE] == SUCCESS) {
+            debug("Success to get stop pictures response");
+        }
+        else {
+           debug("Fail to get stop pictures response");
+        }
+
+        closeConnection();
+        clearBuffers();
+      }
+
+
       //! Main loop.
       void
       onMain(void)
       {
+
+        bool takePicture = true;
+        Time::Counter<float> m_timer;
+        uint32_t unique_id = 5000;
+
         while (!stopping())
         {
           waitForMessages(1.0);
@@ -445,6 +553,19 @@ namespace Vision
             temperatureMeasurement();
             m_timer_heartbeat.reset();
           }
+
+          if(takePicture) {
+            startTakePictures(60, 0, unique_id);
+            m_timer.setTop(0.4);
+            takePicture = false;
+          }
+
+          if(!takePicture && m_timer.overflow()) {
+            stopTakePictures(unique_id);
+            unique_id++;
+            takePicture = true;
+          }
+
         }
       }
     };
