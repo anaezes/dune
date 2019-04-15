@@ -108,6 +108,8 @@ namespace Vision
       TEMP_SET_REQ = 0x5002,
       // Set radiation coefficient of temperature measurement.
       TEMP_SET_RES = 0x5003,
+      // Notification for capture start events.
+      CAPTURE_NOTIFICATION = 0xE000,
       // Recording or capturing start notification.
       START_NOTIFICATION = 0xE008,
       // Recording or capturing stop notification.
@@ -137,54 +139,31 @@ namespace Vision
     // Return response max size.
     static const int c_response_size = 22;
 
-    static const int c_heartbeat_size = 10;
-
-    // Return header request/response size.
-    static const uint8_t c_header_size = 8;
-
     // Return heartbeat body request/response size.
     static const uint8_t c_heartbeat_body_size = 0x00;
-
-    // Return time synchronization body request size.
-    static const uint8_t c_time_sync_req_size = 0x08;
-    // Return time synchronization body response size.
-    static const uint8_t c_time_sync_res_size = 0x00;
-
-    // Return gps information body request size.
-    static const uint8_t c_gps_req_size = 0x0c;
-
-    // Return recording status body request size.
-    static const uint8_t c_rec_status_req_size = 0x00;
-    // Return recording status body response size.
-    static const uint8_t c_rec_status_res_size = 0x04;
+    // Return heartbeat command / response size
+    static const int c_heartbeat_size = 10;
 
     // Return take pictures start body request size.
-    static const uint16_t c_pic_start_req_size = 0x08;
+    static const uint16_t c_pic_start_req_body_size = 0x08;
+    // Return take pictures start body request size.
+    static const uint8_t c_pic_start_req_size = 18;
     // Return take pictures start body response size.
-    static const uint8_t c_pic_start_res_size = 0x04;
+    static const uint8_t c_pic_start_res_size = 14;
 
     // Return take pictures stop body request size.
-    static const uint8_t c_pic_stop_req_size = 0x04;
-    // Return take pictures stop body response size.
-    static const uint8_t c_pic_stop_res_size = 0x00;
+    static const uint8_t c_pic_stop_req_body_size = 0x04;
+    // Return take pictures stop request size.
+    static const uint8_t c_pic_stop_req_size = 14;
+    // Return take pictures stop response size.
+    static const uint8_t c_pic_stop_res_size = 10;
 
     // Return temperature query body request size.
-    static const uint8_t c_temp_query_req_size = 0x00;
+    static const uint8_t c_temp_query_req_body_size = 0x00;
+    // Return temperature query body request size.
+    static const uint8_t c_temp_query_req_size = 10;
     // Return temperature query body response size.
-    static const uint8_t c_temp_query_res_size = 0x08;
-
-    // Return temperature set body request size.
-    static const uint8_t c_temp_set_req_size = 0x08;
-    // Return temperature set body response size.
-    static const uint8_t c_temp_set_res_size = 0x00;
-
-    // Return start / stop notification body request size.
-    static const uint8_t c_notification_size = 0x14;
-
-    // Return file download body request size.
-    static const uint8_t c_file_download_req_size = 0x50;
-    // Return file download body response size (12+n).
-    static const uint8_t c_file_download_res_size = 12;
+    static const uint8_t c_temp_query_res_size = 18;
 
 
     struct Task: public DUNE::Tasks::Task
@@ -274,7 +253,7 @@ namespace Vision
         try
         {
           heartbeat();
-          m_timer_heartbeat.setTop(5);
+          m_timer_heartbeat.setTop(10);
         }
         catch (std::runtime_error& e)
         {
@@ -312,36 +291,40 @@ namespace Vision
         memset(m_response, 0, c_response_size);
       }
 
+      int
+      writeCommand(uint8_t size)
+      {
+        return m_sock_control->write((char*)m_request, size);
+      }
+
+      uint8_t
+      readResponse()
+      {
+        int rv = 0;
+        try {
+            rv = m_sock_control->read((char *) m_response, c_response_size);
+        } catch(std::exception& e) {
+            err("Error: %s", e.what());
+        }
+
+        return rv;
+      }
 
       //! Function to detect the camera online status, the proposed cycle of 5~10 s.
       void
       heartbeat()
       {
-        m_request[ID_CODE] = c_identification_code;
-        m_request[STATUS_CODE] = SUCCESS;
-        m_request[INST_NUMBER] = HEARTBEAT_REQ;
-        m_request[INST_LENGTH] = c_heartbeat_body_size;
+        setHeader(HEARTBEAT_REQ, c_heartbeat_body_size);
 
         openConnection();
 
-        // Write command
-        int wr = m_sock_control->write((char*)m_request, c_request_size);
-        if(wr == -1)
-          debug("error to write...");
-
-        //m_sock_control->flushOutput();
-
-        int rv = 0;
-        try {
-             rv = m_sock_control->read((char *) m_response, c_response_size);
-          } catch(std::exception& e) {
-            err("Error: %s", e.what());
-          }
-
-        if (rv != c_heartbeat_size) {
-          debug("rv != c_heartbeat_size !!!");
-          throw std::runtime_error(DTR("failed to get heartbeat response"));
+        if(writeCommand(c_heartbeat_size) == -1) {
+           debug("error to write...");
+           return;
         }
+
+        if(readResponse() != c_heartbeat_size)
+          throw std::runtime_error(DTR("failed to get heartbeat response"));
 
         //todo HEARTBEAT_RES
         if(m_response[INST_NUMBER] != HEARTBEAT_RES
@@ -357,29 +340,17 @@ namespace Vision
       void
       temperatureMeasurement()
       {
-        m_request[ID_CODE] = c_identification_code;
-        m_request[STATUS_CODE] = SUCCESS;
-        m_request[INST_NUMBER] = TEMP_QUERY_REQ & 0xff;
-        m_request[INST_NUMBER+1] = TEMP_QUERY_REQ >> 8;
-        m_request[INST_LENGTH] = c_temp_query_req_size;
+        setHeader(TEMP_QUERY_REQ, c_temp_query_req_body_size);
 
         openConnection();
 
-        // Write command
-        int wr = m_sock_control->write((char*)m_request, 10);
-        if(wr == -1)
-           debug("error to write...");
-
-        int rv = 0;
-        // Read response
-        try {
-           rv = m_sock_control->read((char *) m_response, c_response_size);
-        } catch(std::exception& e) {
-           err("Error: %s", e.what());
+        if(writeCommand(c_temp_query_req_size) == -1) {
+          debug("error to write...");
+          return;
         }
 
-        if (rv != 18)
-           throw std::runtime_error(DTR("failed to get temperature response"));
+        if(readResponse() != c_temp_query_res_size)
+          throw std::runtime_error(DTR("failed to get temperature response"));
 
         uint16_t instruction;
         mempcpy(&instruction, &m_response[2], 2);
@@ -432,15 +403,10 @@ namespace Vision
       void
       startTakePictures(uint8_t interval, uint8_t format, uint32_t id_picture)
       {
-        m_request[ID_CODE] = c_identification_code;
-        m_request[STATUS_CODE] = SUCCESS;
-        m_request[INST_NUMBER] =  START_PICTURES_REQ & 0xff;
-        m_request[INST_NUMBER + 1] = START_PICTURES_REQ >> 8;
-        m_request[INST_LENGTH] = c_pic_start_req_size;
+        setHeader(START_PICTURES_REQ, c_pic_start_req_body_size);
 
         m_request[BODY] = interval;
         m_request[BODY + 1] = format;
-
         m_request[BODY + 4] = id_picture & 0xff;
         m_request[BODY + 5] = id_picture >> 8;
         m_request[BODY + 6] = id_picture >> 16;
@@ -449,20 +415,12 @@ namespace Vision
         // Open connection
         openConnection();
 
-        // Write command
-        int wr = m_sock_control->write((char *) m_request, 18);
-        if(wr == -1)
+        if(writeCommand(c_pic_start_req_size) == -1) {
           debug("error to write...");
-
-        int rv = 0;
-        // Read response
-        try {
-          rv = m_sock_control->read((char *) m_response, c_response_size);
-         } catch(std::exception& e) {
-          err("Error: %s", e.what());
+          return;
         }
 
-        if(rv != 14)
+        if(readResponse() != c_pic_start_res_size)
           throw std::runtime_error(DTR("failed to get start take pictures response"));
 
         uint16_t instruction;
@@ -481,11 +439,7 @@ namespace Vision
       void
       stopTakePictures(uint32_t id_picture)
       {
-         m_request[ID_CODE] = c_identification_code;
-         m_request[STATUS_CODE] = SUCCESS;
-         m_request[INST_NUMBER] = STOP_PICTURES_REQ & 0xff;
-         m_request[INST_NUMBER+1] = STOP_PICTURES_REQ >> 8;
-         m_request[INST_LENGTH] = c_pic_stop_req_size;
+         setHeader(STOP_PICTURES_REQ, c_pic_stop_req_body_size);
 
          m_request[BODY] = id_picture & 0xff;
          m_request[BODY+1] = id_picture >> 8;
@@ -494,16 +448,13 @@ namespace Vision
 
         openConnection();
 
-        // Write command
-        int wr = m_sock_control->write((char *) m_request, 14);
-        if(wr == -1)
-           debug("error to write...");
+        if(writeCommand(c_pic_stop_req_size) == -1) {
+          debug("error to write...");
+          return;
+        }
 
-        // Read response
-        int rv = m_sock_control->read((char *) m_response, c_response_size);
-
-        if (rv != 10)
-           throw std::runtime_error(DTR("failed to get stop take pictures response"));
+        if(readResponse() != c_pic_stop_res_size)
+          throw std::runtime_error(DTR("failed to get stop take pictures response"));
 
         uint16_t instruction;
         mempcpy(&instruction, &m_response[2], 2);
@@ -517,18 +468,28 @@ namespace Vision
       }
 
       void
+      setHeader(Instruction inst, uint8_t size)
+      {
+        m_request[ID_CODE] = c_identification_code;
+        m_request[STATUS_CODE] = SUCCESS;
+        m_request[INST_NUMBER] = inst & 0xff;
+        m_request[INST_NUMBER+1] = inst >> 8;
+        m_request[INST_LENGTH] = size;
+      }
+
+      void
       startNotificationsPicture()
       {
-          m_request[ID_CODE] = c_identification_code;
-          m_request[STATUS_CODE] = SUCCESS;
-          m_request[INST_NUMBER] = START_NOTIFICATION & 0xff;
-          m_request[INST_NUMBER+1] = START_NOTIFICATION >> 8;
-          m_request[INST_LENGTH] = c_notification_size;
+        m_request[ID_CODE] = c_identification_code;
+        m_request[STATUS_CODE] = SUCCESS;
+        m_request[INST_NUMBER] = START_NOTIFICATION & 0xff;
+        m_request[INST_NUMBER+1] = START_NOTIFICATION >> 8;
+        m_request[INST_LENGTH] = c_notification_size;
 
-          // Write command
-          int wr = m_sock_notif->write((char*)m_request, 30);
-          if(wr == -1)
-              debug("error to write...");
+        // Write command
+        int wr = m_sock_notif->write((char*)m_request, 30);
+        if(wr == -1)
+          debug("error to write...");
       }
 
       void
@@ -544,7 +505,7 @@ namespace Vision
         uint16_t instruction;
         mempcpy(&instruction, &m_response[2], 2);
 
-        if(instruction == 0xe000)
+        if(instruction == CAPTURE_NOTIFICATION)
         {
           uint8_t errorCode;
           mempcpy(&errorCode, &m_response[9], 1);
@@ -553,17 +514,17 @@ namespace Vision
               return;
           }
 
-          uint8_t type;
-          mempcpy(&type, &m_response[8], 1);
+        uint8_t type;
+        mempcpy(&type, &m_response[8], 1);
 
-          if(type == 1)
-            debug("Success! Type: Image file");
-          else
-            debug("Success! Type: Video file");
+        if(type == 1)
+          debug("Success! Type: Image file");
+        else
+          debug("Success! Type: Video file");
 
-          uint8_t picName[64];
-          mempcpy(&picName, &m_response[16], 64);
-          debug("Picture name: %s", (char*)picName);
+        uint8_t picName[64];
+        mempcpy(&picName, &m_response[16], 64);
+        debug("Picture name: %s", (char*)picName);
         }
       }
 
