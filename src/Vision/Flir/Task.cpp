@@ -264,7 +264,7 @@ namespace Vision
       onResourceAcquisition(void)
       {
         m_sock_notif = new TCPSocket();
-        m_sock_notif->setNoDelay(true);
+        m_sock_notif->connect(m_args.addr, m_args.port_notification);
       }
 
       //! Initialize resources.
@@ -534,6 +534,57 @@ namespace Vision
         clearBuffers();
       }
 
+      void
+      startNotificationsPicture()
+      {
+          m_request[ID_CODE] = c_identification_code;
+          m_request[STATUS_CODE] = SUCCESS;
+          m_request[INST_NUMBER] = START_NOTIFICATION & 0xff;
+          m_request[INST_NUMBER+1] = START_NOTIFICATION >> 8;
+          m_request[INST_LENGTH] = c_notification_size;
+
+          // Write command
+          int wr = m_sock_notif->write((char*)m_request, 30);
+          if(wr == -1)
+              debug("error to write...");
+      }
+
+      void
+      readNotification()
+      {
+
+        try {
+          m_sock_notif->read((char *) m_response, 100);
+        } catch(std::exception& e) {
+          err("Error: %s", e.what());
+        }
+
+        uint16_t instruction;
+        mempcpy(&instruction, &m_response[2], 2);
+
+        if(instruction == 0xe000)
+        {
+          uint8_t errorCode;
+          mempcpy(&errorCode, &m_response[9], 1);
+          if(errorCode != SUCCESS) {
+              debug("Error code: %x", errorCode);
+              return;
+          }
+
+          uint8_t type;
+          mempcpy(&type, &m_response[8], 1);
+
+          if(type == 1)
+            debug("Success! Type: Image file");
+          else
+            debug("Success! Type: Video file");
+
+          uint8_t picName[64];
+          mempcpy(&picName, &m_response[16], 64);
+          debug("Picture name: %s", (char*)picName);
+        }
+      }
+
 
       //! Main loop.
       void
@@ -566,6 +617,9 @@ namespace Vision
             takePicture = true;
           }
 
+          if(Poll::poll(*m_sock_notif, 0.1)) {
+            readNotification();
+          }
         }
       }
     };
