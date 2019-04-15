@@ -291,7 +291,8 @@ namespace Vision
 
       //! Open short TCP connection
       void
-      openConnection() {
+      openConnection()
+      {
         // Open connection
         m_sock_control = new TCPSocket();
         m_sock_control->connect(m_args.addr, m_args.port_control);
@@ -299,13 +300,14 @@ namespace Vision
 
       //! Close short TCP connection
       void
-      closeConnection() {
-        if (m_sock_control != NULL)
-          delete m_sock_control;
+      closeConnection()
+      {
+          Memory::clear(m_sock_control);
       }
 
       void
-      clearBuffers() {
+      clearBuffers()
+      {
         memset(m_request, 0, c_request_size);
         memset(m_response, 0, c_response_size);
       }
@@ -327,10 +329,9 @@ namespace Vision
         if(wr == -1)
           debug("error to write...");
 
-        m_sock_control->flushOutput();
+        //m_sock_control->flushOutput();
 
         int rv = 0;
-        // Read response
         try {
              rv = m_sock_control->read((char *) m_response, c_response_size);
           } catch(std::exception& e) {
@@ -343,11 +344,11 @@ namespace Vision
         }
 
         //todo HEARTBEAT_RES
-        if(m_response[INST_NUMBER] == HEARTBEAT_RES
-           && m_response[STATUS_CODE] == SUCCESS) {
-            debug("IT'S ALIVE...");
-            debug("Success to get heartbeat response");
-        }
+        if(m_response[INST_NUMBER] != HEARTBEAT_RES
+           || m_response[STATUS_CODE] != SUCCESS)
+            debug("failed to get heartbeat response");
+        else
+            debug("Heartbeat");
 
         closeConnection();
         clearBuffers();
@@ -383,13 +384,10 @@ namespace Vision
         uint16_t instruction;
         mempcpy(&instruction, &m_response[2], 2);
 
-        debug("Instruction dec: %d", instruction);
-        debug("instruction hex: %02x", instruction);
-
         if(instruction == TEMP_QUERY_RES
              && m_response[STATUS_CODE] == SUCCESS) {
           debug("Success to get temperature response");
-          printTemperature();
+          printDataTemperature();
         }
 
         closeConnection();
@@ -397,11 +395,13 @@ namespace Vision
       }
 
       void
-      printTemperature() {
+      printDataTemperature()
+      {
+        uint8_t airTemperature = m_response[11] & 0xff;
         if(m_response[8] == 0)
-          debug("Temperature unit: ºC");
+          debug("Air temperature: %d ºC", airTemperature);
         else
-          debug("Temperature unit: ºF");
+          debug("Air temperature: %d ºF", airTemperature);
 
         if(m_response[9] == 0)
           debug("Measurement points enabled : closed");
@@ -410,9 +410,6 @@ namespace Vision
 
         uint8_t emissivity = m_response[10] & 0xff;
         debug("Emissivity: %d", emissivity);
-
-        uint8_t airTemperature = m_response[11] & 0xff;
-        debug("Air temperature: %d", airTemperature);
 
         uint8_t skyCondition = m_response[12] & 0xff;
         if(skyCondition == 0)
@@ -428,7 +425,6 @@ namespace Vision
         uint16_t distance;
         mempcpy(&distance, &m_response[14], 2);
         debug("Subject distance dec: %d", distance);
-        debug("Subject distance hex: %02x", distance);
       }
 
 
@@ -436,8 +432,6 @@ namespace Vision
       void
       startTakePictures(uint8_t interval, uint8_t format, uint32_t id_picture)
       {
-        debug("START take pictures");
-
         m_request[ID_CODE] = c_identification_code;
         m_request[STATUS_CODE] = SUCCESS;
         m_request[INST_NUMBER] =  START_PICTURES_REQ & 0xff;
@@ -474,14 +468,9 @@ namespace Vision
         uint16_t instruction;
         mempcpy(&instruction, &m_response[2], 2);
 
-        if(instruction == START_PICTURES_RES
-           && m_response[STATUS_CODE] == SUCCESS) {
-            debug("Success to get start pictures response");
-        }
-        else {
+        if(instruction != START_PICTURES_RES || m_response[STATUS_CODE] != SUCCESS) {
             debug("Fail to get start pictures response");
         }
-
 
         closeConnection();
         clearBuffers();
@@ -490,10 +479,8 @@ namespace Vision
 
       //! Take pictures stop: can specify a single shot or timer shot (seconds)
       void
-      stopTakePictures(uint32_t id_picture) {
-
-         debug("STOP take pictures");
-
+      stopTakePictures(uint32_t id_picture)
+      {
          m_request[ID_CODE] = c_identification_code;
          m_request[STATUS_CODE] = SUCCESS;
          m_request[INST_NUMBER] = STOP_PICTURES_REQ & 0xff;
@@ -515,18 +502,13 @@ namespace Vision
         // Read response
         int rv = m_sock_control->read((char *) m_response, c_response_size);
 
-        debug("rv: %d",rv);
         if (rv != 10)
            throw std::runtime_error(DTR("failed to get stop take pictures response"));
 
         uint16_t instruction;
         mempcpy(&instruction, &m_response[2], 2);
 
-        if(instruction == STOP_PICTURES_RES
-           && m_response[STATUS_CODE] == SUCCESS) {
-            debug("Success to get stop pictures response");
-        }
-        else {
+        if(instruction != STOP_PICTURES_RES || m_response[STATUS_CODE] != SUCCESS) {
            debug("Fail to get stop pictures response");
         }
 
@@ -590,10 +572,16 @@ namespace Vision
       void
       onMain(void)
       {
-
-        bool takePicture = true;
-        Time::Counter<float> m_timer;
+        Time::Counter<float> timer_picture;
         uint32_t unique_id = 5000;
+
+        bool first = true;
+        bool stop = false;
+
+        temperatureMeasurement();
+
+        startNotificationsPicture();
+        timer_picture.setTop(0.1);
 
         while (!stopping())
         {
@@ -601,20 +589,20 @@ namespace Vision
 
           if(m_timer_heartbeat.overflow()) {
             heartbeat();
-            temperatureMeasurement();
-            m_timer_heartbeat.reset();
+            m_timer_heartbeat.setTop(10);
           }
 
-          if(takePicture) {
-            startTakePictures(60, 0, unique_id);
-            m_timer.setTop(0.4);
-            takePicture = false;
+          if(first) {
+            debug("Send take picture command...");
+            startTakePictures(10, 0, unique_id);
+            timer_picture.setTop(100);
+            first = false;
           }
 
-          if(!takePicture && m_timer.overflow()) {
+          if(timer_picture.overflow() && !stop) {
+            debug("Send stop picture command...");
             stopTakePictures(unique_id);
-            unique_id++;
-            takePicture = true;
+            stop = true;
           }
 
           if(Poll::poll(*m_sock_notif, 0.1)) {
