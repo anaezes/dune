@@ -165,6 +165,10 @@ namespace Vision
     // Return temperature query body response size.
     static const uint8_t c_temp_query_res_size = 18;
 
+    // Return start notification body size.
+    static const uint8_t c_notification_body_size = 0x14;
+    // Return start notification command size.
+    static const uint8_t c_notification_size = 30;
 
     struct Task: public DUNE::Tasks::Task
     {
@@ -484,10 +488,10 @@ namespace Vision
         m_request[STATUS_CODE] = SUCCESS;
         m_request[INST_NUMBER] = START_NOTIFICATION & 0xff;
         m_request[INST_NUMBER+1] = START_NOTIFICATION >> 8;
-        m_request[INST_LENGTH] = c_notification_size;
+        m_request[INST_LENGTH] = c_notification_body_size;
 
         // Write command
-        int wr = m_sock_notif->write((char*)m_request, 30);
+        int wr = m_sock_notif->write((char*)m_request, c_notification_size);
         if(wr == -1)
           debug("error to write...");
       }
