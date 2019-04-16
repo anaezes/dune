@@ -32,91 +32,88 @@
 
 namespace Vision
 {
-  //! Insert short task description here.
-  //!
-  //! Insert explanation on task behaviour here.
-  //! @author Ana Santos
+  //! Device Driver for the FLIR Duo camera
   namespace Flir
   {
     using DUNE_NAMESPACES;
 
      enum Index
      {
-      // Identification code.
+      //! Identification code.
       ID_CODE = 0,
-      // Status code.
+      //! Status code.
       STATUS_CODE = 1,
-      // Instruction number.
+      //! Instruction number.
       INST_NUMBER = 2,
-      // Instruction number.
+      //! Instruction number.
       INST_LENGTH = 4,
-      // CRC check (checksum).
+      //! CRC check (checksum).
       CRC1 = 6,
-      // Body
+      //! Body
       BODY = 8
     };
 
     enum Status_code
     {
-      // Success.
+      //! Success.
       SUCCESS = 0x00,
-      // Operation error.
+      //! Operation error.
       OP_ERROR = 0x02,
-      // Instruction number is incorrect.
+      //! Instruction number is incorrect.
       INSTRUCTION_INCORRECT = 0x03,
-      // Parameter is illegal.
+      //! Parameter is illegal.
       ILLEGAL_PARAM = 0x04,
-      // CRC1 check code error.
+      //! CRC1 check code error.
       CRC1_CHECK_ERROR = 0x05,
-      // CRC2 check code error.
+      //! CRC2 check code error.
       CRC2_CHECK_ERROR = 0x06,
-      // File could not be found.
+      //! File could not be found.
       FILE_NOT_FOUND = 0x07,
-      // Device is busy and can not respond.
+      //! Device is busy and can not respond.
       BUSY = 0x08
     };
 
     enum Instruction
     {
-      // Camera status request.
+      //! Camera status request.
       HEARTBEAT_REQ = 0x0000,
-      // Camera status response.
+      //! Camera status response.
       HEARTBEAT_RES = 0x0001,
-      // Time synchronization request.
+      //! Time synchronization request.
       TIME_SYNC_REQ = 0x0002,
-      // Time synchronization response.
+      //! Time synchronization response.
       TIME_SYNC_RES = 0x0003,
-      // Set camera GPS information.
+      //! Set camera GPS information.
       GPS_INF_REQ = 0x0004,
-      // Recording status request.
+      //! Recording status request.
       REC_STATUS_REQ = 0x1004,
-      // Recording status response.
+      //! Recording status response.
       REC_STATUS_RES = 0x1005,
-      // Take pictures start.
+      //! Take pictures start.
       START_PICTURES_REQ = 0x2000,
-      // Take pictures start.
+      //! Take pictures start.
       START_PICTURES_RES = 0x2001,
-      // Take pictures stop.
+      //! Take pictures stop.
       STOP_PICTURES_REQ = 0x2002,
-      // Take pictures stop.
+      //! Take pictures stop.
       STOP_PICTURES_RES = 0x2003,
-      // Query radiation coefficient of temperature measurement.
+      //! Query radiation coefficient of temperature measurement.
       TEMP_QUERY_REQ = 0x5000,
-      // Query radiation coefficient of temperature measurement.
+      //! Query radiation coefficient of temperature measurement.
       TEMP_QUERY_RES = 0x5001,
-      // Set radiation coefficient of temperature measurement.
+      //! Set radiation coefficient of temperature measurement.
       TEMP_SET_REQ = 0x5002,
-      // Set radiation coefficient of temperature measurement.
+      //! Set radiation coefficient of temperature measurement.
       TEMP_SET_RES = 0x5003,
-      // Notification for capture start events.
+      //! Notification for capture start events.
       CAPTURE_NOTIFICATION = 0xE000,
-      // Recording or capturing start notification.
+      //! Recording or capturing start notification.
       START_NOTIFICATION = 0xE008,
-      // Recording or capturing stop notification.
+      //! Recording or capturing stop notification.
       STOP_NOTIFICATION = 0xE006,
-      // Recording or capturing stop notification.
+      //! Recording or capturing stop notification.
       FILE_DOWNLOAD_REQ = 0xF004,
-      // Recording or capturing stop notification.
+      //! Recording or capturing stop notification.
       STOP_NOTIF_RES = 0xF005
     };
 
@@ -132,62 +129,51 @@ namespace Vision
       unsigned port_notification;
     };
 
+    //! Return identification command code.
     static const uint8_t c_identification_code = 0x64;
-
-    // Return request max size.
+    //! Return request max size.
     static const int c_request_size = 80;
-    // Return response max size.
-    static const int c_response_size = 22;
-
-    // Return heartbeat body request/response size.
+    //! Return response max size.
+    static const int c_response_size = 100;
+    //! Return heartbeat body request/response size.
     static const uint8_t c_heartbeat_body_size = 0x00;
-    // Return heartbeat command / response size
+    //! Return heartbeat command / response size
     static const int c_heartbeat_size = 10;
-
-    // Return take pictures start body request size.
+    //! Return take pictures start body request size.
     static const uint16_t c_pic_start_req_body_size = 0x08;
-    // Return take pictures start body request size.
+    //! Return take pictures start body request size.
     static const uint8_t c_pic_start_req_size = 18;
-    // Return take pictures start body response size.
+    //! Return take pictures start body response size.
     static const uint8_t c_pic_start_res_size = 14;
-
-    // Return take pictures stop body request size.
+    //! Return take pictures stop body request size.
     static const uint8_t c_pic_stop_req_body_size = 0x04;
-    // Return take pictures stop request size.
+    //! Return take pictures stop request size.
     static const uint8_t c_pic_stop_req_size = 14;
-    // Return take pictures stop response size.
+    //! Return take pictures stop response size.
     static const uint8_t c_pic_stop_res_size = 10;
-
-    // Return temperature query body request size.
+    //! Return temperature query body request size.
     static const uint8_t c_temp_query_req_body_size = 0x00;
-    // Return temperature query body request size.
+    //! Return temperature query body request size.
     static const uint8_t c_temp_query_req_size = 10;
-    // Return temperature query body response size.
+    //! Return temperature query body response size.
     static const uint8_t c_temp_query_res_size = 18;
-
-    // Return start notification body size.
+    //! Return start notification body size.
     static const uint8_t c_notification_body_size = 0x14;
-    // Return start notification command size.
+    //! Return start notification command size.
     static const uint8_t c_notification_size = 30;
 
     struct Task: public DUNE::Tasks::Task
     {
-
       //! Task arguments.
       Arguments m_args;
-
-      // TCP socket control.
+      //! TCP socket control.
       TCPSocket* m_sock_control;
-
-      // TCP socket notification.
+      //! TCP socket notification.
       TCPSocket* m_sock_notif;
-
-      // Request
+      //! Request buffer
       uint8_t m_request[c_request_size];
-
-      // Response
+      //! Response buffer
       uint8_t m_response[c_response_size];
-
       //! Heartbeat timer
       Time::Counter<float> m_timer_heartbeat;
 
@@ -197,7 +183,8 @@ namespace Vision
       Task(const std::string& name, Tasks::Context& ctx):
         DUNE::Tasks::Task(name, ctx),
         m_sock_control(NULL),
-        m_sock_notif(NULL)
+        m_sock_notif(NULL),
+        m_timer_heartbeat(0)
       {
         // Define configuration parameters.
         paramActive(Tasks::Parameter::SCOPE_MANEUVER,
@@ -219,27 +206,7 @@ namespace Vision
                 .maximumValue("65535")
                 .description("TCP port notification");
 
-        std::memset(m_request, 0, c_request_size);
-        std::memset(m_response, 0, c_response_size);
-
-      }
-
-      //! Update internal state with new parameter values.
-      void
-      onUpdateParameters(void)
-      {
-      }
-
-      //! Reserve entity identifiers.
-      void
-      onEntityReservation(void)
-      {
-      }
-
-      //! Resolve entity names.
-      void
-      onEntityResolution(void)
-      {
+        clearBuffers();
       }
 
       //! Acquire resources.
@@ -247,7 +214,7 @@ namespace Vision
       onResourceAcquisition(void)
       {
         m_sock_notif = new TCPSocket();
-        m_sock_notif->connect(m_args.addr, m_args.port_notification);
+        m_sock_notif->setNoDelay(true);
       }
 
       //! Initialize resources.
@@ -256,6 +223,8 @@ namespace Vision
       {
         try
         {
+          m_sock_notif->connect(m_args.addr, m_args.port_notification);
+
           heartbeat();
           m_timer_heartbeat.setTop(10);
         }
@@ -270,6 +239,7 @@ namespace Vision
       onResourceRelease(void)
       {
         Memory::clear(m_sock_notif);
+        Memory::clear(m_sock_control);
       }
 
       //! Open short TCP connection
@@ -322,7 +292,8 @@ namespace Vision
 
         openConnection();
 
-        if(writeCommand(c_heartbeat_size) == -1) {
+        if(writeCommand(c_heartbeat_size) == -1)
+        {
            debug("error to write...");
            return;
         }
@@ -330,9 +301,7 @@ namespace Vision
         if(readResponse() != c_heartbeat_size)
           throw std::runtime_error(DTR("failed to get heartbeat response"));
 
-        //todo HEARTBEAT_RES
-        if(m_response[INST_NUMBER] != HEARTBEAT_RES
-           || m_response[STATUS_CODE] != SUCCESS)
+        if(m_response[INST_NUMBER] != HEARTBEAT_RES || m_response[STATUS_CODE] != SUCCESS)
             debug("failed to get heartbeat response");
         else
             debug("Heartbeat");
@@ -348,7 +317,8 @@ namespace Vision
 
         openConnection();
 
-        if(writeCommand(c_temp_query_req_size) == -1) {
+        if(writeCommand(c_temp_query_req_size) == -1)
+        {
           debug("error to write...");
           return;
         }
@@ -359,8 +329,8 @@ namespace Vision
         uint16_t instruction;
         mempcpy(&instruction, &m_response[2], 2);
 
-        if(instruction == TEMP_QUERY_RES
-             && m_response[STATUS_CODE] == SUCCESS) {
+        if(instruction == TEMP_QUERY_RES && m_response[STATUS_CODE] == SUCCESS)
+        {
           debug("Success to get temperature response");
           printDataTemperature();
         }
@@ -419,7 +389,8 @@ namespace Vision
         // Open connection
         openConnection();
 
-        if(writeCommand(c_pic_start_req_size) == -1) {
+        if(writeCommand(c_pic_start_req_size) == -1)
+        {
           debug("error to write...");
           return;
         }
@@ -430,9 +401,8 @@ namespace Vision
         uint16_t instruction;
         mempcpy(&instruction, &m_response[2], 2);
 
-        if(instruction != START_PICTURES_RES || m_response[STATUS_CODE] != SUCCESS) {
-            debug("Fail to get start pictures response");
-        }
+        if(instruction != START_PICTURES_RES || m_response[STATUS_CODE] != SUCCESS)
+          debug("Fail to get start pictures response");
 
         closeConnection();
         clearBuffers();
@@ -452,7 +422,8 @@ namespace Vision
 
         openConnection();
 
-        if(writeCommand(c_pic_stop_req_size) == -1) {
+        if(writeCommand(c_pic_stop_req_size) == -1)
+        {
           debug("error to write...");
           return;
         }
@@ -463,14 +434,14 @@ namespace Vision
         uint16_t instruction;
         mempcpy(&instruction, &m_response[2], 2);
 
-        if(instruction != STOP_PICTURES_RES || m_response[STATUS_CODE] != SUCCESS) {
+        if(instruction != STOP_PICTURES_RES || m_response[STATUS_CODE] != SUCCESS)
            debug("Fail to get stop pictures response");
-        }
 
         closeConnection();
         clearBuffers();
       }
 
+      //! Change header according to the command
       void
       setHeader(Instruction inst, uint8_t size)
       {
@@ -481,27 +452,25 @@ namespace Vision
         m_request[INST_LENGTH] = size;
       }
 
+      //! Activate recording or capturing start notifications
       void
-      startNotificationsPicture()
+      activatePicturesNotifications()
       {
-        m_request[ID_CODE] = c_identification_code;
-        m_request[STATUS_CODE] = SUCCESS;
-        m_request[INST_NUMBER] = START_NOTIFICATION & 0xff;
-        m_request[INST_NUMBER+1] = START_NOTIFICATION >> 8;
-        m_request[INST_LENGTH] = c_notification_body_size;
+        setHeader(START_NOTIFICATION, c_notification_body_size);
 
-        // Write command
+        // write command
         int wr = m_sock_notif->write((char*)m_request, c_notification_size);
         if(wr == -1)
           debug("error to write...");
       }
 
+      //! Receive and process notifications received
       void
       readNotification()
       {
 
         try {
-          m_sock_notif->read((char *) m_response, 100);
+          m_sock_notif->read((char *) m_response, c_response_size);
         } catch(std::exception& e) {
           err("Error: %s", e.what());
         }
@@ -513,7 +482,8 @@ namespace Vision
         {
           uint8_t errorCode;
           mempcpy(&errorCode, &m_response[9], 1);
-          if(errorCode != SUCCESS) {
+          if(errorCode != SUCCESS)
+          {
               debug("Error code: %x", errorCode);
               return;
           }
@@ -545,34 +515,36 @@ namespace Vision
 
         temperatureMeasurement();
 
-        startNotificationsPicture();
+        activatePicturesNotifications();
         timer_picture.setTop(0.1);
 
         while (!stopping())
         {
           waitForMessages(1.0);
 
-          if(m_timer_heartbeat.overflow()) {
+          if(m_timer_heartbeat.overflow())
+          {
             heartbeat();
             m_timer_heartbeat.setTop(10);
           }
 
           if(first) {
             debug("Send take picture command...");
-            startTakePictures(10, 0, unique_id);
+            startTakePictures(0, 0, unique_id);
             timer_picture.setTop(100);
             first = false;
           }
 
-          if(timer_picture.overflow() && !stop) {
+          if(timer_picture.overflow() && !stop)
+          {
             debug("Send stop picture command...");
             stopTakePictures(unique_id);
             stop = true;
           }
 
-          if(Poll::poll(*m_sock_notif, 0.1)) {
+          if(Poll::poll(*m_sock_notif, 0.1))
             readNotification();
-          }
+
         }
       }
     };
