@@ -1,5 +1,5 @@
 //***************************************************************************
-// Copyright 2007-2018 Universidade do Porto - Faculdade de Engenharia      *
+// Copyright 2007-2019 Universidade do Porto - Faculdade de Engenharia      *
 // Laboratório de Sistemas e Tecnologia Subaquática (LSTS)                  *
 //***************************************************************************
 // This file is part of DUNE: Unified Navigation Environment.               *
@@ -26,13 +26,14 @@
 //***************************************************************************
 // Author: Ana Santos                                                       *
 //***************************************************************************
-// Utility to compute distance travelled from LSF log files.                *
+// Utility to generate .872 files through logs.                             *
 //***************************************************************************
 
 // ISO C++ 98 headers.
 #include <iostream>
 #include <fstream>
 #include <cstring>
+#include <string>
 #include <cstdlib>
 #include <map>
 
@@ -49,10 +50,14 @@ const uint16_t c_data_points_channel = 1000;
 const uint16_t c_gps_string_file_offset = 3200;
 //! Number of bytes to previous ping
 const uint16_t c_bytes_previous_ping = 8192;
-//! File name of data log
-const std::string file_logs = "/Data.lsf.gz" ;
-//! File name of 872 file
-const std::string name_file = "/Data.872";
+//! File name of data log .lsf
+const std::string file_logs = "/Data.lsf" ;
+//! File name of 872 file with filter
+const std::string name_file_filter = "/Data-filter-";
+//! File name of 872 file without filter
+const std::string name_file_original = "/Data-original-";
+//! File type
+const std::string fileType = ".872";
 
 
 void
@@ -325,20 +330,61 @@ getDataFiles(const char* directory, std::vector<std::string> &result) {
     return 0;
 }
 
+std::string
+getFile(std::string directory, bool filter, std::string ref_path) {
+    // Raw log file
+    //std::ofstream data_file;
+    std::string file_872 = directory;
+
+    if(filter) {
+        file_872 += name_file_filter;
+    }
+    else {
+        file_872 += name_file_original;
+    }
+
+    file_872 += ref_path;
+    file_872 += fileType;
+
+    //data_file.open(file_872.c_str(), std::ofstream::app | std::ios::binary);
+
+    return file_872;
+}
+
+bool
+fileExists(const std::string& filename)
+{
+    struct stat buf;
+    if (stat(filename.c_str(), &buf) != -1)
+    {
+        return true;
+    }
+    return false;
+}
+
 int
 main(int32_t argc, char** argv) {
 
-    if (argc <= 1)
+    if (argc <= 3)
     {
-        std::cerr << "Usage: " << argv[0] << " <directory>"
-                  << std::endl;
+        std::cerr << "Usage: " << argv[0] << " <directory> <1 or 0> <time>" << std::endl;
         return 1;
     }
+
+    std::cout << "Imc to 872...." << std::endl;
+
+    bool filter = false;
+    if (strcmp(argv[2], "1") == 0) {
+        filter = true;
+    }
+
+    int time = atoi(argv[3]);
 
     std::vector<std::string> result;
     if(getDataFiles(argv[1], result) == -1) {
         std::cerr << "Error while searching files." << std::endl;
         return 1;
+
     }
 
     IMC::Message* msg = NULL;
@@ -361,19 +407,23 @@ main(int32_t argc, char** argv) {
         else
             is = new Compression::FileInput(result[i].c_str(), method);
 
-
         std::string directory = result[i].substr(0, result[i].find(file_logs));
-        std::cout << "File: " << directory << std::endl;
 
-
-        // Raw log file
-        std::ofstream data_file;
-        std::string file_872 = directory + name_file;
-        data_file.open(file_872.c_str(), std::ofstream::app | std::ios::binary);
+        std::cout << "File: " << directory << std::endl << std::endl;
 
         bool received_sonar_data = false;
         bool received_set_entity_parameters = false;
         bool received_estimated_state = false;
+        bool acoustic_transmission = false;
+        bool popUpManeuver = false;
+        bool changedDirection = false;
+        bool firstPathControlMsg = true;
+
+        uint32_t lastPathRef = 0;
+        std::ofstream data_file;
+        std::string file_872 = "";
+        uint32_t initTime = 0;
+        uint32_t currentTime = 0;
 
         try {
 
@@ -419,7 +469,6 @@ main(int32_t argc, char** argv) {
                                 std::istringstream((*it)->value) >> range;
                                 setRangeIndex(data, range);
                                 data[71] = range;
-
                             }
                         }
                     }
@@ -439,30 +488,92 @@ main(int32_t argc, char** argv) {
                     IMC::SoundSpeed* ptr = static_cast<IMC::SoundSpeed*>(msg);
                     sound_speed = ptr->value * 10;
                 }
+                else if(msg->getId() == DUNE_IMC_PATHCONTROLSTATE) {
+                    IMC::PathControlState* ptr = static_cast<IMC::PathControlState*>(msg);
+
+                    if(ptr->path_ref != lastPathRef) {
+                        changedDirection = true;
+                        lastPathRef = ptr->path_ref;
+                    }
+
+                    currentTime = ptr->getTimeStamp();
+
+                    if(firstPathControlMsg){
+                        initTime = currentTime;
+                        std::stringstream ss;
+                        ss << lastPathRef;
+                        file_872 = getFile(directory, filter, ss.str());
+                        if(fileExists(file_872))
+                            remove(file_872.c_str());
+                        data_file.open(file_872.c_str(), std::ofstream::app | std::ios::binary);
+                        firstPathControlMsg = false;
+                    }
+
+                }
+                else if(filter && msg->getId() == DUNE_IMC_UAMTXSTATUS) {
+
+                    IMC::UamTxStatus* ptr = static_cast<IMC::UamTxStatus*>(msg);
+
+                    if (ptr->value ==  ptr->UTS_IP)
+                        acoustic_transmission = true; //stop
+                    else
+                        acoustic_transmission = false; //restart
+                }
 
                 if(!received_sonar_data || !received_estimated_state)
                     continue;
 
+                if(acoustic_transmission) {
+                    continue;
+                }
+
                 data[51] = sound_speed >> 8;
                 data[52] = sound_speed & 0xff;
+
+                if(changedDirection)
+                {
+                  data_file.close();
+
+                  if(difftime(currentTime, initTime) <= time){
+                    remove(file_872.c_str());
+                  }
+
+                  //new file
+                  std::stringstream ss;
+                  ss << lastPathRef;
+                  file_872 = getFile(directory, filter, ss.str());
+
+                  if(fileExists(file_872))
+                      remove(file_872.c_str());
+
+                  data_file.open(file_872.c_str(), std::ofstream::app | std::ios::binary);
+
+                  changedDirection = false;
+                  initTime = currentTime;
+                }
 
                 std::vector<uint8_t> header = getFileHeader(range);
                 std::memcpy(&data[53], &header[0], 12);
 
                 // Write to file
                 for(size_t i = 0; i < c_ping_size; i++)
-                    data_file << data[i] ;
+                   data_file << data[i];
 
                 received_sonar_data = false;
-                received_estimated_state = false;
+                //received_estimated_state = false;
             }
 
-            data_file.close();
+
         }
         catch (std::runtime_error& e)
         {
             std::cerr << "ERROR: " << e.what() << std::endl;
         }
-    }
 
+        // Last file
+        data_file.close();
+        if(difftime(currentTime, initTime) <= time) {
+            remove(file_872.c_str());
+        }
+    }
 }
