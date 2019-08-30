@@ -158,9 +158,14 @@ namespace DUNE
     }
 
     void
-    HayesModem::sendAT(const std::string& str)
+    HayesModem::sendAT(const std::string& str, bool diffVersion)
     {
-      std::string cmd("AT");
+      std::string cmd;
+      if(diffVersion)
+        cmd = "+++AT";
+      else
+        cmd = "AT";
+
       cmd.append(str);
       m_last_cmd = cmd;
       cmd.append(getLineTermOut());

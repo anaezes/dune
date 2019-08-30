@@ -99,9 +99,9 @@ namespace Transports
       void
       sendReset(void)
       {
-        sendAT("Z1");
-        sendAT("Z3");
-        sendAT("Z4");
+        sendCMD("Z1");
+        sendCMD("Z3");
+        sendCMD("Z4");
       }
 
       //! Set control over modem.
@@ -114,7 +114,7 @@ namespace Transports
         if (getFirmwareVersion() == "1.7")
           return;
 
-        sendAT("@CTRL");
+        sendCMD("@CTRL");
         expectOK();
       }
 
@@ -123,7 +123,7 @@ namespace Transports
       void
       setAddress(unsigned addr)
       {
-        sendAT(String::str("!AL%u", addr));
+        sendCMD(String::str("!AL%u", addr));
         expectOK();
       }
 
@@ -132,7 +132,7 @@ namespace Transports
       void
       setSourceLevel(unsigned value)
       {
-        sendAT(String::str("!L%u", value));
+        sendCMD(String::str("!L%u", value));
         expectOK();
       }
 
@@ -142,7 +142,7 @@ namespace Transports
       void
       setLowGain(bool low_gain)
       {
-        sendAT(String::str("!G%u", low_gain ? 1 : 0));
+        sendCMD(String::str("!G%u", low_gain ? 1 : 0));
         expectOK();
       }
 
@@ -151,7 +151,7 @@ namespace Transports
       void
       setIdleTimeout(unsigned value)
       {
-        sendAT(String::str("!ZI%u", value));
+        sendCMD(String::str("!ZI%u", value));
         expectOK();
       }
 
@@ -161,7 +161,7 @@ namespace Transports
       void
       setRetryCount(unsigned value)
       {
-        sendAT(String::str("!RC%u", value));
+        sendCMD(String::str("!RC%u", value));
         expectOK();
       }
 
@@ -170,7 +170,7 @@ namespace Transports
       void
       setRetryCountIM(unsigned value)
       {
-        sendAT(String::str("!RI%u", value));
+        sendCMD(String::str("!RI%u", value));
         expectOK();
       }
 
@@ -180,7 +180,7 @@ namespace Transports
       void
       setRetryTimeout(unsigned value)
       {
-        sendAT(String::str("!RT%u", value));
+        sendCMD(String::str("!RT%u", value));
         expectOK();
       }
 
@@ -195,14 +195,14 @@ namespace Transports
       void
       setExtendedNotifications(bool enable)
       {
-        sendAT(String::str("@ZX%u", enable ? 1 : 0));
+        sendCMD(String::str("@ZX%u", enable ? 1 : 0));
         expectOK();
       }
 
       void
       setPromiscuous(bool enable)
       {
-        sendAT(String::str("!RP%u", enable ? 1 : 0));
+        sendCMD(String::str("!RP%u", enable ? 1 : 0));
         expectOK();
       }
 
@@ -211,7 +211,7 @@ namespace Transports
       void
       setHighestAddress(unsigned value)
       {
-        sendAT(String::str("!AM%u", value));
+        sendCMD(String::str("!AM%u", value));
         expectOK();
       }
 
@@ -225,7 +225,7 @@ namespace Transports
       {
         std::string cmd = String::str("*SENDIM,%u,%u,%s,", data_size, dst, ack ? "ack" : "noack");
         cmd.append((char*)data, data_size);
-        sendAT(cmd);
+        sendCMD(cmd);
         expectOK();
         setBusy(true);
       }
@@ -239,7 +239,7 @@ namespace Transports
       {
         std::string cmd = String::str("*SEND,%u,%u,", data_size, dst);
         cmd.append((char*)data, data_size);
-        sendAT(cmd);
+        sendCMD(cmd);
         expectOK();
         setBusy(true);
       }
@@ -254,7 +254,7 @@ namespace Transports
         // Do not set modem busy.
         std::string cmd = String::str("*SENDPBM,%u,%u,", data_size, dst);
         cmd.append((char*)data, data_size);
-        sendAT(cmd);
+        sendCMD(cmd);
         expectOK();
       }
 
@@ -264,7 +264,7 @@ namespace Transports
       unsigned
       getPropagationTime(void)
       {
-        sendAT("?T");
+        sendCMD("?T");
         std::string str = readLine();
         unsigned value = 0;
         if (!castLexical(str, value))
@@ -278,7 +278,7 @@ namespace Transports
       unsigned
       getSoundSpeed(void)
       {
-        sendAT("?CA");
+        sendCMD("?CA");
         std::string str = readLine();
         unsigned value = 0;
         if (!castLexical(str, value))
@@ -292,21 +292,21 @@ namespace Transports
       void
       setSoundSpeed(unsigned value)
       {
-        sendAT(String::str("!CA%u", value));
+        sendCMD(String::str("!CA%u", value));
         expectOK();
       }
 
       void
       setCarrierWaveformID(unsigned value)
       {
-        sendAT(String::str("!C%u", value));
+        sendCMD(String::str("!C%u", value));
         expectOK();
       }
 
       void
       setPositionDataOutput(bool enable)
       {
-        sendAT(String::str("@ZU%u", enable ? 1 : 0));
+        sendCMD(String::str("@ZU%u", enable ? 1 : 0));
         expectOK();
       }
 
@@ -315,11 +315,15 @@ namespace Transports
       uint32_t
       getClock(void)
       {
-        sendAT("?CLOCK");
+        sendCMD("?CLOCK");
         std::string str = readLine();
+
+        std::string res = parseResponse(str);
+
+
         unsigned value = 0;
-        if (!castLexical(str, value))
-          throw Hardware::InvalidFormat(str);
+        if (!castLexical(res, value))
+          throw Hardware::InvalidFormat(res);
 
         return value;
       }
@@ -334,7 +338,7 @@ namespace Transports
         std::vector<unsigned> mp;
         mp.resize(16, 0);
 
-        sendAT("?P");
+        sendCMD("?P");
         std::string str = readLine();
         std::istringstream ss(str);
         for (unsigned i = 0; i < 16; ++i)
@@ -350,7 +354,7 @@ namespace Transports
       void
       switchToNoiseState(void)
       {
-        sendAT("N");
+        sendCMD("N");
         std::string rv = readLine();
         if (rv != "INITIATION NOISE")
           throw UnexpectedReply("INITIATION NOISE", rv);
@@ -359,7 +363,7 @@ namespace Transports
       void
       switchToListenState(void)
       {
-        sendAT("A");
+        sendCMD("A");
         std::string rv = readLine();
         if (rv != "INITIATION LISTEN")
           throw UnexpectedReply("INITIATION LISTEN", rv);
@@ -496,6 +500,11 @@ namespace Transports
         m_declination = value;
       }
 
+      void
+      setFirmVersion(std::string version) {
+        m_version = version;
+      }
+
     private:
       //! Firmware version.
       std::string m_version;
@@ -507,20 +516,25 @@ namespace Transports
       double m_declination;
 
       void
-      sendInitialization(void)
-      {
-        // Get firmware version.
-        sendAT("I0");
-        m_version = readLine();
+      sendInitialization(void) {
 
         // Get PHY and MAC versions.
         char phy[64] = {0};
         char mac[64] = {0};
 
-        sendAT("I1");
+        sendCMD("I1");
+
         std::string str = readLine();
-        if (std::sscanf(str.c_str(), "phy:%*[^0]%[^,], mac:%*[^v]v%s", phy, mac) != 2)
+
+        if(m_version == "2.0" &&
+           std::sscanf(str.c_str(), "+++ATI:%*[^:]:phy:%*[^0]%[^,], mac:%*[^v]v%s", phy, mac) != 2) {
           throw Hardware::InvalidFormat(str);
+        }
+        else if(m_version == "1.9" &&
+                std::sscanf(str.c_str(), "phy:%*[^0]%[^,], mac:%*[^v]v%s", phy, mac) != 2) {
+          throw Hardware::InvalidFormat(str);
+        }
+
         m_phy_ptl_version = phy;
         m_mac_ptl_version = mac;
 
@@ -609,8 +623,30 @@ namespace Transports
       expectOK(void)
       {
         std::string rv = readLine();
-        if ((rv != "OK") && (rv != "[*]OK"))
+
+        if (rv.find("OK") == std::string::npos)
           throw UnexpectedReply("OK", rv);
+
+      }
+
+      void
+      sendCMD(std::string cmd)
+      {
+        if(m_version == "2.0")
+          sendAT(cmd, true);
+        else
+          sendAT(cmd);
+      }
+
+      std::string
+      parseResponse(std::string response)
+      {
+        int n = 0;
+        char res[64] = {0};
+
+        std::sscanf(response.c_str(), "+++AT?%*[^:]:%d:%s", &n,res);
+
+        return res;
       }
     };
   }

@@ -81,6 +81,8 @@ namespace Transports
       unsigned src_level_underwater;
       //! Name of the section with modem addresses.
       std::string addr_section;
+      //!Firmware version
+      std::string firm_version;
     };
 
     // Type definition for mapping addresses.
@@ -211,6 +213,10 @@ namespace Transports
         .defaultValue("Evologics Addresses")
         .description("Name of the configuration section with modem addresses");
 
+        param("Firmware version", m_args.firm_version)
+                .defaultValue("1.9")
+                .description("Firmware version");
+
         m_medium.medium = IMC::VehicleMedium::VM_UNKNOWN;
 
         bind<IMC::DevDataText>(this);
@@ -246,29 +252,28 @@ namespace Transports
       }
 
       void
-      onResourceAcquisition(void)
-      {
-        try
-        {
-          {
-            TCPSocket atz;
-            atz.connect(m_args.address, m_args.port);
-            atz.writeString("ATZ0\n");
-            Delay::wait(5.0);
-          }
+      onResourceAcquisition(void) {
+        debug("onResourceAcquisition!!!!");
+
+        try {
+          TCPSocket atz;
+          atz.connect(m_args.address, m_args.port);
+          atz.writeString("+++ATZ0\n");
+          Delay::wait(5.0);
 
           m_sock = new TCPSocket;
           m_sock->connect(m_args.address, m_args.port);
+          m_driver = new Driver(this, m_sock);
+          m_driver->setLineTermIn("\r\n");
+          m_driver->setLineTermOut("\r");
+          m_driver->setFirmVersion(m_args.firm_version);
+          m_driver->initialize();
         }
-        catch (std::runtime_error& e)
-        {
+        catch (std::runtime_error &e) {
+          debug("Error: %s", e.what());
           throw RestartNeeded(e.what(), 5, false);
         }
 
-        m_driver = new Driver(this, m_sock);
-        m_driver->setLineTermIn("\r\n");
-        m_driver->setLineTermOut("\n");
-        m_driver->initialize();
       }
 
       void
@@ -314,8 +319,14 @@ namespace Transports
         m_driver->setPositionDataOutput(true);
         m_driver->setPromiscuous(true);
         m_driver->setExtendedNotifications(true);
+
         m_kalive_counter.setTop(m_args.kalive_tout);
         setEntityState(IMC::EntityState::ESTA_NORMAL, Status::CODE_ACTIVE);
+      }
+
+      std::string
+      getFirmVersion(void){
+        return m_args.firm_version;
       }
 
       unsigned
