@@ -77,7 +77,8 @@ namespace Transports
       "SENDEND",
       "SENDPBM",
       "RECVPBM",
-      "CANCELEDPBM"
+      "CANCELEDPBM",
+      "RECVSRV"
     };
 
     class Driver: public HayesModem
@@ -320,10 +321,12 @@ namespace Transports
 
         std::string res = parseResponse(str);
 
-
         unsigned value = 0;
-        if (!castLexical(res, value))
-          throw Hardware::InvalidFormat(res);
+        if (!castLexical(res, value)) {
+            throw Hardware::InvalidFormat(res);
+        }
+
+        //getTask()->debug("clock %s", res.c_str());
 
         return value;
       }
@@ -594,12 +597,28 @@ namespace Transports
         return false;
       }
 
+      std::string
+      parseMsg(std::string msg)
+      {
+        int n = 0;
+        char res[64] = {0};
+
+        std::sscanf(msg.c_str(), "+++AT:%d:%s", &n, res);
+
+        return res;
+      }
+
       bool
       handleUnsolicited(const std::string& str)
       {
+
+        std::string str1 = str;
+        if (m_version == "2.0")
+          str1 = parseMsg(str);
+
         for (size_t i = 0; i < sizeof(c_async_msgs) / sizeof(char*); ++i)
         {
-          if (String::startsWith(str, c_async_msgs[i]))
+          if(String::startsWith(str1, c_async_msgs[i]))
           {
             dispatch(str);
             return true;
@@ -632,6 +651,9 @@ namespace Transports
       void
       sendCMD(std::string cmd)
       {
+
+        getTask()->debug("send cmd: %s", cmd.c_str());
+
         if(m_version == "2.0")
           sendAT(cmd, true);
         else

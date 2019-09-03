@@ -253,7 +253,7 @@ namespace Transports
 
       void
       onResourceAcquisition(void) {
-        debug("onResourceAcquisition!!!!");
+        debug("onResourceAcquisition");
 
         try {
           TCPSocket atz;
@@ -273,7 +273,6 @@ namespace Transports
           debug("Error: %s", e.what());
           throw RestartNeeded(e.what(), 5, false);
         }
-
       }
 
       void
@@ -293,6 +292,9 @@ namespace Transports
       void
       onResourceInitialization(void)
       {
+
+        debug("onResourceInitialization");
+
         // Process modem addresses.
         std::string system = getSystemName();
         std::vector<std::string> addrs = m_ctx.config.options(m_args.addr_section);
@@ -423,6 +425,18 @@ namespace Transports
         }
       }
 
+      std::string
+      parseMsg(std::string msg)
+      {
+
+        int n = 0;
+        char res[64] = {0};
+
+        std::sscanf(msg.c_str(), "+++AT:%d:%s", &n, res);
+
+        return res;
+      }
+
       void
       consume(const IMC::DevDataText* msg)
       {
@@ -432,44 +446,56 @@ namespace Transports
         if (msg->getDestinationEntity() != getEntityId())
           return;
 
-        if (String::startsWith(msg->value, "RECVIMS"))
+        std::string msg_value;
+
+        if(m_args.firm_version == "2.0")
+          msg_value = parseMsg(msg->value);
+        else
+          msg_value = msg->value;
+
+        debug("mensagem: %s" , msg->value.c_str());
+        debug("parse: %s" , msg_value.c_str());
+
+        if (String::startsWith(msg_value, "RECVIMS"))
           return;
-        else if (String::startsWith(msg->value, "RECVIM"))
-          handleInstantMessage(msg->value, false);
-        else if (String::startsWith(msg->value, "RECVPBM"))
-          handleInstantMessage(msg->value, true);
-        else if (String::startsWith(msg->value, "DELIVEREDIM"))
-          handleMessageDelivered(msg->value);
-        else if (String::startsWith(msg->value, "CANCELEDIM"))
+        else if (String::startsWith(msg_value, "RECVIM"))
+          handleInstantMessage(msg_value, false);
+        else if (String::startsWith(msg_value, "RECVPBM"))
+          handleInstantMessage(msg_value, true);
+        else if (String::startsWith(msg_value, "DELIVEREDIM"))
+          handleMessageDelivered(msg_value);
+        else if (String::startsWith(msg_value, "CANCELEDIM"))
           return;
-        else if (String::startsWith(msg->value, "CANCELEDPBM"))
+        else if (String::startsWith(msg_value, "CANCELEDPBM"))
           return;
-        else if (String::startsWith(msg->value, "FAILEDIM"))
-          handleMessageFailed(msg->value);
-        else if (String::startsWith(msg->value, "BUSY"))
-          handleMessageFailed(msg->value);
-        else if (String::startsWith(msg->value, "SENDEND"))
-          handleSendEnd(msg->value);
-        else if (String::startsWith(msg->value, "RECVSTART"))
+        else if (String::startsWith(msg_value, "FAILEDIM"))
+          handleMessageFailed(msg_value);
+        else if (String::startsWith(msg_value, "BUSY"))
+          handleMessageFailed(msg_value);
+        else if (String::startsWith(msg_value, "SENDEND"))
+          handleSendEnd(msg_value);
+        else if (String::startsWith(msg_value, "RECVSTART"))
           return;
-        else if (String::startsWith(msg->value, "RECVEND"))
+        else if (String::startsWith(msg_value, "RECVEND"))
           return;
-        else if (String::startsWith(msg->value, "RECVFAILED"))
+        else if (String::startsWith(msg_value, "RECVFAILED"))
           return;
-        else if (String::startsWith(msg->value, "RECV"))
-          handleBurstMessage(msg->value);
+        else if (String::startsWith(msg_value, "RECVSRV"))
+          return;
+        else if (String::startsWith(msg_value, "RECV"))
+          handleBurstMessage(msg_value);
 
         // Burst messages.
-        else if (String::startsWith(msg->value, "DELIVERED"))
-          handleMessageDelivered(msg->value);
-        else if (String::startsWith(msg->value, "FAILED"))
-          handleMessageFailed(msg->value);
+        else if (String::startsWith(msg_value, "DELIVERED"))
+          handleMessageDelivered(msg_value);
+        else if (String::startsWith(msg_value, "FAILED"))
+          handleMessageFailed(msg_value);
 
         // USBL.
-        else if (String::startsWith(msg->value, "USBLLONG"))
-          handleUsblPosition(msg->value);
-        else if (String::startsWith(msg->value, "USBLANGLES"))
-          handleUsblAngles(msg->value);
+        else if (String::startsWith(msg_value, "USBLLONG"))
+          handleUsblPosition(msg_value);
+        else if (String::startsWith(msg_value, "USBLANGLES"))
+          handleUsblAngles(msg_value);
       }
 
       void
@@ -716,6 +742,7 @@ namespace Transports
       void
       keepAlive(void)
       {
+
         if (m_driver->isBusy())
           return;
 
